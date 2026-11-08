@@ -1,39 +1,68 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_doc_scanner/flutter_doc_scanner.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:share_plus/share_plus.dart';
-void main()=>runApp(const DocuScan());
-const green=Color(0xFF1E7054), ink=Color(0xFF17221E), bg=Color(0xFFF7F8F5);
-class DocuScan extends StatelessWidget { const DocuScan({super.key}); @override Widget build(BuildContext context)=>MaterialApp(title:'DocuScan',debugShowCheckedModeBanner:false,theme:ThemeData(useMaterial3:true,scaffoldBackgroundColor:bg,colorScheme:ColorScheme.fromSeed(seedColor:green)),home:const Home()); }
-class LocalDoc{final String title,path,type,date;final int pages;const LocalDoc(this.title,this.path,this.type,this.date,this.pages);}
-class Home extends StatefulWidget {const Home({super.key}); @override State<Home> createState()=>_HomeState();}
-class _HomeState extends State<Home>{int tab=0;String filter='All files';List<LocalDoc> docs=[];bool busy=false; final scanner=FlutterDocScanner();void msg(String s)=>ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(s),behavior:SnackBarBehavior.floating));
-Future<Directory> get folder async{final d=Directory('${(await getApplicationDocumentsDirectory()).path}/DocuScan');if(!await d.exists())await d.create(recursive:true);return d;}
-Future<void> load()async{final dir=await folder;final list=<LocalDoc>[];for(final f in dir.listSync()){if(f is File&&(f.path.endsWith('.pdf')||f.path.endsWith('.jpg')||f.path.endsWith('.png'))){final stat=await f.stat();list.add(LocalDoc(f.uri.pathSegments.last.replaceAll(RegExp(r'\.[^.]+$'),''),f.path,f.path.endsWith('.pdf')?'PDF':'Image',stat.modified.toLocal().toString().substring(0,16),1));}}list.sort((a,b)=>b.date.compareTo(a.date));if(mounted)setState(()=>docs=list);}
-Future<void> scan()async{try{setState(()=>busy=true);final result=await scanner.getScannedDocumentAsImages(page:20);if(result==null)return;final dir=await folder;final stamp=DateTime.now().millisecondsSinceEpoch;final images=<File>[];for(var i=0;i<result.images.length;i++){final src=result.images[i];final bytes=src.startsWith('content://')?await _uriBytes(src):await File(src).readAsBytes();final out=File('${dir.path}/Scan_$stamp-${i+1}.jpg');await out.writeAsBytes(bytes);images.add(out);}final name=await _askName('Scan ${DateTime.now().day}-${DateTime.now().month}');if(name!=null&&name.trim().isNotEmpty){final pdf=pw.Document();for(final img in images){final data=await img.readAsBytes();pdf.addPage(pw.Page(build:(c)=>pw.Center(child:pw.Image(pw.MemoryImage(data),fit:pw.BoxFit.contain))));}final out=File('${dir.path}/${_safe(name)}.pdf');await out.writeAsBytes(await pdf.save());for(final img in images){await img.delete();}}await load();}catch(e){msg('Could not scan document: $e');}finally{if(mounted)setState(()=>busy=false);}}
-Future<List<int>> _uriBytes(String uri)async{final bytes=await const MethodChannel('com.docuscan/local_files').invokeMethod<Uint8List>('readUri',{'uri':uri});if(bytes==null)throw Exception('Unable to read scanned page');return bytes;}
-Future<void> importImage()async{try{final files=await ImagePicker().pickMultiImage();if(files.isEmpty)return;final name=await _askName('Imported scan');if(name==null)return;final dir=await folder;for(var i=0;i<files.length;i++){final bytes=await files[i].readAsBytes();await File('${dir.path}/${_safe(name)}-${i+1}.jpg').writeAsBytes(bytes);}await makePdf(name,files.map((e)=>e.path).toList());await load();}catch(e){msg('Could not import image: $e');}}
-Future<void> makePdf(String name,List<String> paths)async{final pdf=pw.Document();for(final p in paths){final b=await File(p).readAsBytes();pdf.addPage(pw.Page(build:(c)=>pw.Center(child:pw.Image(pw.MemoryImage(b),fit:pw.BoxFit.contain))));}await File('${(await folder).path}/${_safe(name)}.pdf').writeAsBytes(await pdf.save());}
-Future<void> ocr()async{final f=await ImagePicker().pickImage(source:ImageSource.gallery);if(f==null)return;final recognizer=TextRecognizer();try{final r=await recognizer.processImage(InputImage.fromFilePath(f.path));final text=r.text;if(text.isEmpty){msg('No text detected');return;}final name=await _askName('Extracted text');if(name==null)return;await File('${(await folder).path}/${_safe(name)}.txt').writeAsString(text);if(mounted)showDialog(context:context,builder:(c)=>AlertDialog(title:Text(name),content:SingleChildScrollView(child:SelectableText(text)),actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('Done'))]));await load();}catch(e){msg('Text recognition failed: $e');}finally{await recognizer.close();}}
-String _safe(String v)=>v.trim().replaceAll(RegExp(r'[^a-zA-Z0-9 _-]'), '').replaceAll(' ','_');Future<String?> _askName(String initial)async{final c=TextEditingController(text:initial);return showDialog<String>(context:context,builder:(ctx)=>AlertDialog(title:const Text('Name your document'),content:TextField(controller:c,autofocus:true,decoration:const InputDecoration(labelText:'Document name',border:OutlineInputBorder())),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(ctx,c.text),child:const Text('Save locally'))]));}
-@override void initState(){super.initState();load();}
-@override Widget build(BuildContext c)=>Scaffold(body:SafeArea(child:CustomScrollView(slivers:[SliverPadding(padding:const EdgeInsets.fromLTRB(22,12,22,15),sliver:SliverToBoxAdapter(child:header())),SliverPadding(padding:const EdgeInsets.symmetric(horizontal:22),sliver:SliverToBoxAdapter(child:welcome())),SliverPadding(padding:const EdgeInsets.fromLTRB(22,22,22,8),sliver:SliverToBoxAdapter(child:title('Quick actions'))),SliverPadding(padding:const EdgeInsets.symmetric(horizontal:22),sliver:SliverToBoxAdapter(child:actions())),SliverPadding(padding:const EdgeInsets.fromLTRB(22,24,22,8),sliver:SliverToBoxAdapter(child:title('Recent documents'))),SliverPadding(padding:const EdgeInsets.symmetric(horizontal:22),sliver:SliverToBoxAdapter(child:filters())),SliverPadding(padding:const EdgeInsets.symmetric(horizontal:22),sliver:docs.isEmpty?SliverToBoxAdapter(child:empty()):SliverList.builder(itemCount:visible.length,itemBuilder:(c,i)=>doc(visible[i]))),const SliverToBoxAdapter(child:SizedBox(height:100))])),floatingActionButton:FloatingActionButton.extended(onPressed:busy?null:scan,backgroundColor:green,foregroundColor:Colors.white,icon:busy?const SizedBox(width:18,height:18,child:CircularProgressIndicator(color:Colors.white,strokeWidth:2)):const Icon(Icons.document_scanner_outlined),label:Text(busy?'Scanning…':'Scan document',style:const TextStyle(fontWeight:FontWeight.bold))),floatingActionButtonLocation:FloatingActionButtonLocation.centerFloat,bottomNavigationBar:NavigationBar(height:68,selectedIndex:tab,onDestinationSelected:(v){setState(()=>tab=v);if(v==1)search();},destinations:const[NavigationDestination(icon:Icon(Icons.home_outlined),selectedIcon:Icon(Icons.home_rounded),label:'Home'),NavigationDestination(icon:Icon(Icons.search_rounded),label:'Search'),NavigationDestination(icon:Icon(Icons.folder_outlined),label:'Local files')]));
-List<LocalDoc> get visible=>docs.where((d)=>filter=='All files'||(filter=='PDFs'&&d.type=='PDF')||(filter=='Images'&&d.type=='Image')||(filter=='Scans'&&d.title.toLowerCase().contains('scan'))).toList();
-Widget header()=>Row(children:[Container(width:42,height:42,decoration:BoxDecoration(color:green,borderRadius:BorderRadius.circular(14)),child:const Icon(Icons.document_scanner_outlined,color:Colors.white)),const SizedBox(width:10),const Text('docu',style:TextStyle(fontSize:21,fontWeight:FontWeight.w800,color:ink)),const Text('scan',style:TextStyle(fontSize:21,fontWeight:FontWeight.w800,color:green)),const Spacer(),IconButton(onPressed:()=>msg('Documents are stored only on this device.'),icon:const Icon(Icons.phonelink_lock_outlined)),const CircleAvatar(radius:19,backgroundColor:Color(0xFFDCE8DF),child:Icon(Icons.person_outline,color:green))]);
-Widget welcome()=>Container(padding:const EdgeInsets.all(20),decoration:BoxDecoration(color:const Color(0xFFEAF1E9),borderRadius:BorderRadius.circular(24)),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('YOUR PRIVATE SCAN SPACE',style:TextStyle(fontSize:10,letterSpacing:1.2,fontWeight:FontWeight.w800,color:green)),const SizedBox(height:8),const Text('Everything in\nits right place.',style:TextStyle(color:ink,fontSize:26,fontWeight:FontWeight.w800,height:1.1)),const SizedBox(height:17),Row(children:[const Icon(Icons.folder_open_outlined,size:16,color:green),const SizedBox(width:6),Text('${docs.length} documents saved locally',style:const TextStyle(color:Color(0xFF4D5F55),fontSize:12,fontWeight:FontWeight.w600)),const Spacer(),const Icon(Icons.offline_bolt_outlined,size:16,color:green),const SizedBox(width:5),const Text('On device',style:TextStyle(color:green,fontSize:11,fontWeight:FontWeight.w700))])]));
-Widget title(String t)=>Text(t,style:const TextStyle(fontSize:17,fontWeight:FontWeight.w800,color:ink));
-Widget actions()=>Row(children:[action(Icons.camera_alt_outlined,'Camera scan','Auto page detect',const Color(0xFFE5F0E7),scan),const SizedBox(width:10),action(Icons.image_outlined,'Import images','From gallery',const Color(0xFFF2EDE3),importImage),const SizedBox(width:10),action(Icons.text_snippet_outlined,'Extract text','On-device OCR',const Color(0xFFEAEAF1),ocr)]);
-Widget action(IconData i,String t,String s,Color color,VoidCallback f)=>Expanded(child:InkWell(onTap:f,borderRadius:BorderRadius.circular(19),child:Container(height:118,padding:const EdgeInsets.all(12),decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(19),border:Border.all(color:const Color(0xFFEBEEE9))),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Container(width:35,height:35,decoration:BoxDecoration(color:color,borderRadius:BorderRadius.circular(12)),child:Icon(i,size:19,color:ink)),const Spacer(),Text(t,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:11,fontWeight:FontWeight.w800,color:ink)),const SizedBox(height:3),Text(s,style:const TextStyle(fontSize:9,color:Color(0xFF788078)))]))));
-Widget filters()=>SingleChildScrollView(scrollDirection:Axis.horizontal,child:Row(children:['All files','PDFs','Images','Scans'].map((f){return Padding(padding:const EdgeInsets.only(right:8),child:ChoiceChip(label:Text(f),selected:filter==f,onSelected:(_)=>setState(()=>filter=f),showCheckmark:false,labelStyle:TextStyle(fontSize:11,fontWeight:FontWeight.w700,color:filter==f?Colors.white:const Color(0xFF69736B)),selectedColor:green,backgroundColor:Colors.white,side:BorderSide(color:filter==f?green:const Color(0xFFE7EAE5))));}).toList()));Widget empty()=>Container(margin:const EdgeInsets.only(top:15),padding:const EdgeInsets.all(25),decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(20)),child:const Column(children:[Icon(Icons.document_scanner_outlined,size:34,color:green),SizedBox(height:10),Text('Your scans live here',style:TextStyle(fontWeight:FontWeight.bold,color:ink)),SizedBox(height:5),Text('Capture a page or import an image. Files stay on this device.',textAlign:TextAlign.center,style:TextStyle(fontSize:12,color:Color(0xFF788078)))]));
-Widget doc(LocalDoc d)=>Container(margin:const EdgeInsets.only(bottom:10),padding:const EdgeInsets.all(12),decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(18),border:Border.all(color:const Color(0xFFEBEEE9))),child:Row(children:[Container(width:50,height:56,decoration:BoxDecoration(color:const Color(0xFFE9EEE6),borderRadius:BorderRadius.circular(12)),child:Icon(d.type=='PDF'?Icons.picture_as_pdf_outlined:Icons.image_outlined,color:green,size:24)),const SizedBox(width:12),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(d.title,overflow:TextOverflow.ellipsis,style:const TextStyle(fontWeight:FontWeight.w700,fontSize:13,color:ink)),const SizedBox(height:4),Text('${d.type} · ${d.date}',style:const TextStyle(fontSize:10,color:Color(0xFF788078)))])),PopupMenuButton<String>(onSelected:(v)=>v=='share'?SharePlus.instance.share(ShareParams(files:[XFile(d.path)])):v=='delete'?delete(d):open(d),itemBuilder:(_)=>const[PopupMenuItem(value:'open',child:Text('Open / preview')),PopupMenuItem(value:'share',child:Text('Share')),PopupMenuItem(value:'delete',child:Text('Delete'))]) ]));
-Future<void> delete(LocalDoc d)async{await File(d.path).delete();await load();}
-Future<void> open(LocalDoc d)async{if(d.type=='PDF'){await SharePlus.instance.share(ShareParams(files:[XFile(d.path)],title:d.title));}else{showDialog(context:context,builder:(c)=>Dialog(child:Image.file(File(d.path),fit:BoxFit.contain)));}}
-Future<void> search()async{final q=await showDialog<String>(context:context,builder:(c){final t=TextEditingController();return AlertDialog(title:const Text('Search local documents'),content:TextField(controller:t,autofocus:true,decoration:const InputDecoration(hintText:'Document name')),actions:[TextButton(onPressed:()=>Navigator.pop(c,t.text),child:const Text('Search'))]);});if(q!=null)setState(()=>filter='All files');if(q!=null&&q.isNotEmpty){final found=docs.where((d)=>d.title.toLowerCase().contains(q.toLowerCase())).toList();if(found.isEmpty)msg('No local document matched “$q”');else open(found.first);}}
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'app/providers.dart';
+import 'core/storage/file_store.dart';
+import 'core/storage/settings_store.dart';
+import 'core/theme/app_theme.dart';
+import 'data/database/app_database.dart';
+import 'data/repositories/document_repository.dart';
+import 'data/repositories/recovery_service.dart';
+import 'features/shell/app_shell.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 1. SharedPreferences & Settings
+  final prefs = await SharedPreferences.getInstance();
+  final settingsStore = SettingsStore(prefs);
+
+  // 2. Local FileStore initialization (ScannedImages, PDF, SecureVault, etc.)
+  final fileStore = await FileStore.open();
+
+  // 3. SQLite Database initialization
+  final supportDir = await getApplicationSupportDirectory();
+  final dbPath = p.join(supportDir.path, 'docscanner.db');
+  final appDb = await AppDatabase.open(dbPath);
+
+  // 4. Startup Recovery & Housekeeping
+  try {
+    final docRepo = DocumentRepository(appDb, fileStore);
+    final recovery = RecoveryService(appDb, docRepo, fileStore);
+    await recovery.run();
+  } catch (e) {
+    debugPrint('DocuScan recovery notice: $e');
+  }
+
+  runApp(
+    ProviderScope(
+      overrides: [
+        databaseProvider.overrideWithValue(appDb),
+        fileStoreProvider.overrideWithValue(fileStore),
+        settingsStoreProvider.overrideWithValue(settingsStore),
+      ],
+      child: const DocuScanApp(),
+    ),
+  );
 }
 
+class DocuScanApp extends ConsumerWidget {
+  const DocuScanApp({super.key});
 
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+
+    return MaterialApp(
+      title: 'DocuScan',
+      debugShowCheckedModeBanner: false,
+      themeMode: settings.themeMode,
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      home: const AppShell(),
+    );
+  }
+}
