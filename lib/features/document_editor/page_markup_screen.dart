@@ -176,6 +176,9 @@ class _PageMarkupScreenState extends ConsumerState<PageMarkupScreen> {
     if (chosen != null && mounted) {
       await _placePlacedImage(chosen.path, AnnotationKind.image);
     }
+  }
+
+  Future<void> _addStamp() async {
     final stamps = await ref.read(assetRepositoryProvider).stamps();
     if (!mounted) return;
 
