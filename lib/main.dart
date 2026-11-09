@@ -49,11 +49,26 @@ Future<void> main() async {
   );
 }
 
-class DocuScanApp extends ConsumerWidget {
+class DocuScanApp extends ConsumerStatefulWidget {
   const DocuScanApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DocuScanApp> createState() => _DocuScanAppState();
+}
+
+class _DocuScanAppState extends ConsumerState<DocuScanApp> {
+  bool _showSplash = true;
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.delayed(const Duration(milliseconds: 850), () {
+      if (mounted) setState(() => _showSplash = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
 
     return MaterialApp(
@@ -62,7 +77,43 @@ class DocuScanApp extends ConsumerWidget {
       themeMode: settings.themeMode,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
-      home: const AppShell(),
+      home: _showSplash ? const _StartupSplash() : const AppShell(),
     );
   }
+}
+
+class _StartupSplash extends StatelessWidget {
+  const _StartupSplash();
+
+  @override
+  Widget build(BuildContext context) => const Scaffold(
+    backgroundColor: AppColors.brand,
+    body: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.document_scanner_rounded, size: 76, color: Colors.white),
+          SizedBox(height: 18),
+          Text(
+            'DocuScan',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+            ),
+          ),
+          SizedBox(height: 28),
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white70,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }

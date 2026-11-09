@@ -10,7 +10,8 @@ class Pt {
   Pt operator +(Pt o) => Pt(x + o.x, y + o.y);
   Pt operator -(Pt o) => Pt(x - o.x, y - o.y);
   Pt scale(double sx, [double? sy]) => Pt(x * sx, y * (sy ?? sx));
-  double distanceTo(Pt o) => math.sqrt((x - o.x) * (x - o.x) + (y - o.y) * (y - o.y));
+  double distanceTo(Pt o) =>
+      math.sqrt((x - o.x) * (x - o.x) + (y - o.y) * (y - o.y));
 
   @override
   bool operator ==(Object other) => other is Pt && other.x == x && other.y == y;
@@ -33,7 +34,9 @@ class Quad {
   static Quad? tryDecode(String? json) {
     if (json == null || json.isEmpty) return null;
     try {
-      final list = (jsonDecode(json) as List).map((e) => (e as num).toDouble()).toList();
+      final list = (jsonDecode(json) as List)
+          .map((e) => (e as num).toDouble())
+          .toList();
       return list.length == 8 ? Quad.fromList(list) : null;
     } catch (_) {
       return null;
@@ -47,14 +50,23 @@ class Quad {
 
   List<Pt> get points => [tl, tr, br, bl];
   List<double> toList() => [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y];
-  String encode() => jsonEncode(toList().map((e) => double.parse(e.toStringAsFixed(5))).toList());
+  String encode() => jsonEncode(
+    toList().map((e) => double.parse(e.toStringAsFixed(5))).toList(),
+  );
 
-  bool get isFull => points.every((p) => (p.x == 0 || p.x == 1) && (p.y == 0 || p.y == 1)) &&
-      tl == const Pt(0, 0) && br == const Pt(1, 1);
+  bool get isFull =>
+      points.every((p) => (p.x == 0 || p.x == 1) && (p.y == 0 || p.y == 1)) &&
+      tl == const Pt(0, 0) &&
+      br == const Pt(1, 1);
 
   Quad withPoint(int index, Pt p) {
     final c = Pt(p.x.clamp(0.0, 1.0), p.y.clamp(0.0, 1.0));
-    return Quad(index == 0 ? c : tl, index == 1 ? c : tr, index == 2 ? c : br, index == 3 ? c : bl);
+    return Quad(
+      index == 0 ? c : tl,
+      index == 1 ? c : tr,
+      index == 2 ? c : br,
+      index == 3 ? c : bl,
+    );
   }
 
   /// Shoelace area in normalized units.
@@ -94,7 +106,8 @@ class Quad {
   }
 
   @override
-  bool operator ==(Object other) => other is Quad && other.toList().toString() == toList().toString();
+  bool operator ==(Object other) =>
+      other is Quad && other.toList().toString() == toList().toString();
   @override
   int get hashCode => toList().toString().hashCode;
 }
@@ -106,15 +119,21 @@ enum ScanFilter {
   magic('Magic color'),
   grayscale('Grayscale'),
   blackWhite('B&W'),
+  clearText('Clear text'),
   whiteboard('Whiteboard'),
+  softGray('Soft gray'),
+  vivid('Vivid'),
+  lowLight('Low light'),
   ecoPrint('Eco print'),
   photo('Photo');
 
   const ScanFilter(this.label);
   final String label;
 
-  static ScanFilter fromName(String? name) =>
-      ScanFilter.values.firstWhere((f) => f.name == name, orElse: () => ScanFilter.auto);
+  static ScanFilter fromName(String? name) => ScanFilter.values.firstWhere(
+    (f) => f.name == name,
+    orElse: () => ScanFilter.auto,
+  );
 }
 
 /// Fine adjustments, each in -1..1 (0 = neutral) unless noted.
@@ -171,34 +190,33 @@ class ImageAdjustments {
     double? denoise,
     double? whiten,
     double? glare,
-  }) =>
-      ImageAdjustments(
-        brightness: brightness ?? this.brightness,
-        contrast: contrast ?? this.contrast,
-        saturation: saturation ?? this.saturation,
-        exposure: exposure ?? this.exposure,
-        warmth: warmth ?? this.warmth,
-        highlights: highlights ?? this.highlights,
-        shadows: shadows ?? this.shadows,
-        sharpness: sharpness ?? this.sharpness,
-        denoise: denoise ?? this.denoise,
-        whiten: whiten ?? this.whiten,
-        glare: glare ?? this.glare,
-      );
+  }) => ImageAdjustments(
+    brightness: brightness ?? this.brightness,
+    contrast: contrast ?? this.contrast,
+    saturation: saturation ?? this.saturation,
+    exposure: exposure ?? this.exposure,
+    warmth: warmth ?? this.warmth,
+    highlights: highlights ?? this.highlights,
+    shadows: shadows ?? this.shadows,
+    sharpness: sharpness ?? this.sharpness,
+    denoise: denoise ?? this.denoise,
+    whiten: whiten ?? this.whiten,
+    glare: glare ?? this.glare,
+  );
 
   Map<String, double> toMap() => {
-        'brightness': brightness,
-        'contrast': contrast,
-        'saturation': saturation,
-        'exposure': exposure,
-        'warmth': warmth,
-        'highlights': highlights,
-        'shadows': shadows,
-        'sharpness': sharpness,
-        'denoise': denoise,
-        'whiten': whiten,
-        'glare': glare,
-      };
+    'brightness': brightness,
+    'contrast': contrast,
+    'saturation': saturation,
+    'exposure': exposure,
+    'warmth': warmth,
+    'highlights': highlights,
+    'shadows': shadows,
+    'sharpness': sharpness,
+    'denoise': denoise,
+    'whiten': whiten,
+    'glare': glare,
+  };
 
   factory ImageAdjustments.fromMap(Map<String, dynamic> m) {
     double v(String k) => (m[k] as num?)?.toDouble() ?? 0;
@@ -255,32 +273,33 @@ class PageEdit {
     ScanFilter? filter,
     ImageAdjustments? adjustments,
     bool? deskew,
-  }) =>
-      PageEdit(
-        quad: clearQuad ? null : (quad ?? this.quad),
-        rotation: rotation ?? this.rotation,
-        filter: filter ?? this.filter,
-        adjustments: adjustments ?? this.adjustments,
-        deskew: deskew ?? this.deskew,
-      );
+  }) => PageEdit(
+    quad: clearQuad ? null : (quad ?? this.quad),
+    rotation: rotation ?? this.rotation,
+    filter: filter ?? this.filter,
+    adjustments: adjustments ?? this.adjustments,
+    deskew: deskew ?? this.deskew,
+  );
 
   Map<String, dynamic> toJson() => {
-        'quad': quad?.toList(),
-        'rotation': rotation,
-        'filter': filter.name,
-        'adjustments': adjustments.toMap(),
-        'deskew': deskew,
-      };
+    'quad': quad?.toList(),
+    'rotation': rotation,
+    'filter': filter.name,
+    'adjustments': adjustments.toMap(),
+    'deskew': deskew,
+  };
 
   factory PageEdit.fromJson(Map<String, dynamic> j) => PageEdit(
-        quad: j['quad'] == null
-            ? null
-            : Quad.fromList((j['quad'] as List).map((e) => (e as num).toDouble()).toList()),
-        rotation: (j['rotation'] as int?) ?? 0,
-        filter: ScanFilter.fromName(j['filter'] as String?),
-        adjustments: j['adjustments'] == null
-            ? ImageAdjustments.none
-            : ImageAdjustments.fromMap(j['adjustments'] as Map<String, dynamic>),
-        deskew: (j['deskew'] as bool?) ?? false,
-      );
+    quad: j['quad'] == null
+        ? null
+        : Quad.fromList(
+            (j['quad'] as List).map((e) => (e as num).toDouble()).toList(),
+          ),
+    rotation: (j['rotation'] as int?) ?? 0,
+    filter: ScanFilter.fromName(j['filter'] as String?),
+    adjustments: j['adjustments'] == null
+        ? ImageAdjustments.none
+        : ImageAdjustments.fromMap(j['adjustments'] as Map<String, dynamic>),
+    deskew: (j['deskew'] as bool?) ?? false,
+  );
 }

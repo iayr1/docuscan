@@ -13,15 +13,53 @@ abstract final class Filters {
       case ScanFilter.auto:
         return sharpen(autoLevels(src, lowPct: 0.01, highPct: 0.985), 0.35);
       case ScanFilter.magic:
-        return saturate(autoLevels(removeShadows(src), lowPct: 0.02, highPct: 0.97), 0.35);
+        return saturate(
+          autoLevels(removeShadows(src), lowPct: 0.02, highPct: 0.97),
+          0.35,
+        );
       case ScanFilter.grayscale:
-        return autoLevels(grayscale(removeShadows(src, strength: 0.6)), lowPct: 0.01, highPct: 0.99);
+        return autoLevels(
+          grayscale(removeShadows(src, strength: 0.6)),
+          lowPct: 0.01,
+          highPct: 0.99,
+        );
       case ScanFilter.blackWhite:
         return adaptiveThreshold(src);
+      case ScanFilter.clearText:
+        return sharpen(
+          autoLevels(
+            removeShadows(grayscale(src), strength: 0.8),
+            lowPct: 0.004,
+            highPct: 0.99,
+          ),
+          0.45,
+        );
       case ScanFilter.whiteboard:
-        return whitenBackground(saturate(autoLevels(removeShadows(src), lowPct: 0.03, highPct: 0.9), 0.6), 0.8);
+        return whitenBackground(
+          saturate(
+            autoLevels(removeShadows(src), lowPct: 0.03, highPct: 0.9),
+            0.6,
+          ),
+          0.8,
+        );
+      case ScanFilter.softGray:
+        return autoLevels(
+          denoise(grayscale(removeShadows(src, strength: 0.75)), 0.45),
+          lowPct: 0.005,
+          highPct: 0.995,
+        );
+      case ScanFilter.vivid:
+        return saturate(autoLevels(src, lowPct: 0.005, highPct: 0.995), 0.7);
+      case ScanFilter.lowLight:
+        return adjust(
+          removeShadows(src, strength: 0.75),
+          const ImageAdjustments(exposure: 0.28, shadows: 0.55, denoise: 0.2),
+        );
       case ScanFilter.ecoPrint:
-        return whitenBackground(grayscale(autoLevels(removeShadows(src), lowPct: 0.0, highPct: 0.92)), 1.0);
+        return whitenBackground(
+          grayscale(autoLevels(removeShadows(src), lowPct: 0.0, highPct: 0.92)),
+          1.0,
+        );
       case ScanFilter.photo:
         return saturate(autoLevels(src, lowPct: 0.005, highPct: 0.995), 0.1);
     }
@@ -40,7 +78,11 @@ abstract final class Filters {
   }
 
   /// Linear contrast stretch using luma percentiles (applied equally to RGB to keep hue).
-  static RgbBuffer autoLevels(RgbBuffer src, {double lowPct = 0.01, double highPct = 0.99}) {
+  static RgbBuffer autoLevels(
+    RgbBuffer src, {
+    double lowPct = 0.01,
+    double highPct = 0.99,
+  }) {
     final hist = List<int>.filled(256, 0);
     final d = src.data;
     for (var i = 0; i < d.length; i += 3) {
@@ -109,12 +151,17 @@ abstract final class Filters {
           final fx = (x / factor - 0.5).clamp(0.0, sw - 1.0);
           final x0 = fx.floor(), x1 = math.min(sw - 1, x0 + 1);
           final ax = fx - x0;
-          final top = small[y0 * sw + x0] + (small[y0 * sw + x1] - small[y0 * sw + x0]) * ax;
-          final bot = small[y1 * sw + x0] + (small[y1 * sw + x1] - small[y1 * sw + x0]) * ax;
+          final top =
+              small[y0 * sw + x0] +
+              (small[y0 * sw + x1] - small[y0 * sw + x0]) * ax;
+          final bot =
+              small[y1 * sw + x0] +
+              (small[y1 * sw + x1] - small[y1 * sw + x0]) * ax;
           final bg = math.max(16.0, top + (bot - top) * ay);
           final v = plane[y * w + x];
           final normalized = (v / bg * 255).clamp(0.0, 255.0);
-          out.data[(y * w + x) * 3 + c] = (v + (normalized - v) * strength).round();
+          out.data[(y * w + x) * 3 + c] = (v + (normalized - v) * strength)
+              .round();
         }
       }
     }
@@ -205,7 +252,9 @@ abstract final class Filters {
       final blur = boxBlurPlane(planes[c], src.width, src.height, 1);
       final p = planes[c];
       for (var i = 0; i < p.length; i++) {
-        out.data[i * 3 + c] = (p[i] + (p[i] - blur[i]) * amount * 1.5).round().clamp(0, 255);
+        out.data[i * 3 + c] = (p[i] + (p[i] - blur[i]) * amount * 1.5)
+            .round()
+            .clamp(0, 255);
       }
     }
     return out;
@@ -224,7 +273,9 @@ abstract final class Filters {
       final p = planes[c];
       for (var i = 0; i < p.length; i++) {
         final diff = (p[i] - blur[i]).abs();
-        out.data[i * 3 + c] = diff < tolerance ? (p[i] + (blur[i] - p[i]) * amount).round() : p[i];
+        out.data[i * 3 + c] = diff < tolerance
+            ? (p[i] + (blur[i] - p[i]) * amount).round()
+            : p[i];
       }
     }
     return out;
@@ -260,7 +311,12 @@ abstract final class Filters {
     return out;
   }
 
-  static RgbBuffer _mapLut(RgbBuffer src, Uint8List r, Uint8List g, Uint8List b) {
+  static RgbBuffer _mapLut(
+    RgbBuffer src,
+    Uint8List r,
+    Uint8List g,
+    Uint8List b,
+  ) {
     final out = RgbBuffer(src.width, src.height);
     final d = src.data, o = out.data;
     for (var i = 0; i < d.length; i += 3) {

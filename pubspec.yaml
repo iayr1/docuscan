@@ -61,6 +61,13 @@ dependencies:
   permission_handler: ^13.0.2
   crypto: ^3.0.8
   xml: ^7.0.1
+  llamadart: 0.19.0
+
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes:
+        - llama_cpp
 
 dev_dependencies:
   flutter_test:

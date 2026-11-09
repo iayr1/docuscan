@@ -34,6 +34,12 @@ class _ManualCropScreenState extends ConsumerState<ManualCropScreen> {
   (int, int)? _imageDimensions;
   bool _loading = true;
 
+  Quad get _displayQuad => _quad.rotated(_rotation);
+
+  void _setDisplayQuad(Quad quad) {
+    setState(() => _quad = quad.rotated((4 - _rotation) % 4));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -44,10 +50,14 @@ class _ManualCropScreenState extends ConsumerState<ManualCropScreen> {
 
   Future<void> _loadDimensionsAndDetect() async {
     try {
-      final dims = await ref.read(imageServiceProvider).dimensions(widget.imagePath);
+      final dims = await ref
+          .read(imageServiceProvider)
+          .dimensions(widget.imagePath);
       _imageDimensions = dims;
       if (widget.initialQuad == null) {
-        final detected = await ref.read(imageServiceProvider).detectDocument(widget.imagePath);
+        final detected = await ref
+            .read(imageServiceProvider)
+            .detectDocument(widget.imagePath);
         if (detected != null && detected.area > 0.08) {
           _quad = detected;
         }
@@ -61,12 +71,19 @@ class _ManualCropScreenState extends ConsumerState<ManualCropScreen> {
   Future<void> _autoDetect() async {
     setState(() => _loading = true);
     try {
-      final detected = await ref.read(imageServiceProvider).detectDocument(widget.imagePath);
+      final detected = await ref
+          .read(imageServiceProvider)
+          .detectDocument(widget.imagePath);
       if (detected != null) {
         setState(() => _quad = detected);
         if (mounted) showSnack(context, 'Document edges detected');
       } else {
-        if (mounted) showSnack(context, 'Could not auto-detect edges. Please adjust manually.');
+        if (mounted) {
+          showSnack(
+            context,
+            'Could not auto-detect edges. Please adjust manually.',
+          );
+        }
       }
     } catch (e) {
       if (mounted) showSnack(context, 'Detection error: $e', error: true);
@@ -94,7 +111,10 @@ class _ManualCropScreenState extends ConsumerState<ManualCropScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('Crop & Perspective', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Crop & Perspective',
+          style: TextStyle(color: Colors.white),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.rotate_right_outlined),
@@ -121,7 +141,9 @@ class _ManualCropScreenState extends ConsumerState<ManualCropScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.brand))
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.brand),
+            )
           : LayoutBuilder(
               builder: (ctx, constraints) {
                 final imgW = _imageDimensions?.$1.toDouble() ?? 1000.0;
@@ -140,7 +162,12 @@ class _ManualCropScreenState extends ConsumerState<ManualCropScreen> {
                 final renderSize = fitted.destination;
                 final offsetX = (constraints.maxWidth - renderSize.width) / 2;
                 final offsetY = (constraints.maxHeight - renderSize.height) / 2;
-                final contentRect = Rect.fromLTWH(offsetX, offsetY, renderSize.width, renderSize.height);
+                final contentRect = Rect.fromLTWH(
+                  offsetX,
+                  offsetY,
+                  renderSize.width,
+                  renderSize.height,
+                );
 
                 return Stack(
                   fit: StackFit.expand,
@@ -161,11 +188,12 @@ class _ManualCropScreenState extends ConsumerState<ManualCropScreen> {
                         onPanStart: (details) {
                           final touch = details.localPosition;
                           final normX = (touch.dx - offsetX) / renderSize.width;
-                          final normY = (touch.dy - offsetY) / renderSize.height;
+                          final normY =
+                              (touch.dy - offsetY) / renderSize.height;
 
                           int nearest = 0;
                           double minDistance = double.infinity;
-                          final pts = _quad.points;
+                          final pts = _displayQuad.points;
                           for (var i = 0; i < 4; i++) {
                             final dx = pts[i].x - normX;
                             final dy = pts[i].y - normY;
@@ -186,12 +214,23 @@ class _ManualCropScreenState extends ConsumerState<ManualCropScreen> {
                         onPanUpdate: (details) {
                           if (_activeCorner == null) return;
                           final touch = details.localPosition;
-                          final normX = ((touch.dx - offsetX) / renderSize.width).clamp(0.0, 1.0);
-                          final normY = ((touch.dy - offsetY) / renderSize.height).clamp(0.0, 1.0);
+                          final normX =
+                              ((touch.dx - offsetX) / renderSize.width).clamp(
+                                0.0,
+                                1.0,
+                              );
+                          final normY =
+                              ((touch.dy - offsetY) / renderSize.height).clamp(
+                                0.0,
+                                1.0,
+                              );
 
-                          setState(() {
-                            _quad = _quad.withPoint(_activeCorner!, Pt(normX, normY));
-                          });
+                          _setDisplayQuad(
+                            _displayQuad.withPoint(
+                              _activeCorner!,
+                              Pt(normX, normY),
+                            ),
+                          );
                         },
                         onPanEnd: (_) {
                           setState(() {
@@ -200,7 +239,7 @@ class _ManualCropScreenState extends ConsumerState<ManualCropScreen> {
                         },
                         child: CustomPaint(
                           painter: _QuadCropPainter(
-                            quad: _quad,
+                            quad: _displayQuad,
                             contentRect: contentRect,
                             activeCorner: _activeCorner,
                           ),
@@ -213,7 +252,10 @@ class _ManualCropScreenState extends ConsumerState<ManualCropScreen> {
                       right: 20,
                       child: Center(
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.black.withValues(alpha: 0.75),
                             borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -266,7 +308,10 @@ class _QuadCropPainter extends CustomPainter {
       ..addPath(path, Offset.zero)
       ..fillType = PathFillType.evenOdd;
 
-    canvas.drawPath(outside, Paint()..color = Colors.black.withValues(alpha: 0.45));
+    canvas.drawPath(
+      outside,
+      Paint()..color = Colors.black.withValues(alpha: 0.45),
+    );
 
     final edgePaint = Paint()
       ..color = AppColors.brandDark
@@ -295,14 +340,12 @@ class _QuadCropPainter extends CustomPainter {
       canvas.drawCircle(
         pt,
         isActive ? 22 : 16,
-        Paint()..color = (isActive ? AppColors.brand : AppColors.brandDark).withValues(alpha: 0.35),
+        Paint()
+          ..color = (isActive ? AppColors.brand : AppColors.brandDark)
+              .withValues(alpha: 0.35),
       );
 
-      canvas.drawCircle(
-        pt,
-        isActive ? 14 : 10,
-        Paint()..color = Colors.white,
-      );
+      canvas.drawCircle(pt, isActive ? 14 : 10, Paint()..color = Colors.white);
 
       canvas.drawCircle(
         pt,
@@ -314,5 +357,7 @@ class _QuadCropPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_QuadCropPainter old) =>
-      old.quad != quad || old.contentRect != contentRect || old.activeCorner != activeCorner;
+      old.quad != quad ||
+      old.contentRect != contentRect ||
+      old.activeCorner != activeCorner;
 }

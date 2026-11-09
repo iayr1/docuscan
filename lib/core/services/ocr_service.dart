@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
@@ -25,36 +26,72 @@ class OcrService {
   OcrService();
 
   final Map<OcrLanguage, TextRecognizer> _recognizers = {};
+  Future<void> _pending = Future<void>.value();
+  bool _disposed = false;
 
   TextRecognizer _recognizer(OcrLanguage lang) => _recognizers.putIfAbsent(
-        lang,
-        () => TextRecognizer(
-          script: switch (lang) {
-            OcrLanguage.latin => TextRecognitionScript.latin,
-            OcrLanguage.devanagari => TextRecognitionScript.devanagiri,
-            OcrLanguage.chinese => TextRecognitionScript.chinese,
-            OcrLanguage.japanese => TextRecognitionScript.japanese,
-            OcrLanguage.korean => TextRecognitionScript.korean,
-          },
-        ),
-      );
+    lang,
+    () => TextRecognizer(
+      script: switch (lang) {
+        OcrLanguage.latin => TextRecognitionScript.latin,
+        OcrLanguage.devanagari => TextRecognitionScript.devanagiri,
+        OcrLanguage.chinese => TextRecognitionScript.chinese,
+        OcrLanguage.japanese => TextRecognitionScript.japanese,
+        OcrLanguage.korean => TextRecognitionScript.korean,
+      },
+    ),
+  );
 
   /// Recognises text in an image file. [width]/[height] are the image's pixel
   /// dimensions, used to normalise line boxes for the searchable PDF layer.
-  Future<OcrOutput> recognizeFile(String path, {required OcrLanguage language, required int width, required int height}) async {
-    final result = await _recognizer(language).processImage(InputImage.fromFilePath(path));
-    final lines = <OcrBlock>[];
-    final w = math.max(1, width).toDouble(), h = math.max(1, height).toDouble();
-    for (final block in result.blocks) {
-      for (final line in block.lines) {
-        final r = line.boundingBox;
-        lines.add(OcrBlock(line.text, r.left / w, r.top / h, r.width / w, r.height / h));
+  Future<OcrOutput> recognizeFile(
+    String path, {
+    required OcrLanguage language,
+    required int width,
+    required int height,
+    bool Function()? shouldProcess,
+  }) async {
+    if (_disposed) throw StateError('OCR service has been disposed');
+    // ML Kit recognizers are native, stateful objects. Queue requests so a
+    // rapid image/language change cannot process concurrently on one engine.
+    final previous = _pending;
+    final done = Completer<void>();
+    _pending = done.future;
+    await previous;
+    try {
+      if (_disposed) throw StateError('OCR service has been disposed');
+      if (shouldProcess != null && !shouldProcess()) {
+        throw StateError('OCR request superseded');
       }
+      final result = await _recognizer(
+        language,
+      ).processImage(InputImage.fromFilePath(path));
+      final lines = <OcrBlock>[];
+      final w = math.max(1, width).toDouble(),
+          h = math.max(1, height).toDouble();
+      for (final block in result.blocks) {
+        for (final line in block.lines) {
+          final r = line.boundingBox;
+          lines.add(
+            OcrBlock(
+              line.text,
+              r.left / w,
+              r.top / h,
+              r.width / w,
+              r.height / h,
+            ),
+          );
+        }
+      }
+      return OcrOutput(result.text, lines, language.name);
+    } finally {
+      done.complete();
     }
-    return OcrOutput(result.text, lines, language.name);
   }
 
   Future<void> dispose() async {
+    _disposed = true;
+    await _pending;
     for (final r in _recognizers.values) {
       await r.close();
     }
@@ -68,7 +105,8 @@ abstract final class OcrLayout {
   /// left-to-right. Works for printed tables with clear row spacing; merged
   /// cells and multi-line cells are not reconstructed.
   static List<List<String>> toTableRows(List<OcrBlock> lines) {
-    final sorted = List.of(lines)..sort((a, b) => (a.top + a.height / 2).compareTo(b.top + b.height / 2));
+    final sorted = List.of(lines)
+      ..sort((a, b) => (a.top + a.height / 2).compareTo(b.top + b.height / 2));
     final rows = <List<OcrBlock>>[];
     for (final l in sorted) {
       final cy = l.top + l.height / 2;
@@ -84,14 +122,27 @@ abstract final class OcrLayout {
       rows.add([l]);
     }
     return [
-      for (final r in rows) [for (final c in (r..sort((a, b) => a.left.compareTo(b.left)))) c.text.trim()],
+      for (final r in rows)
+        [
+          for (final c in (r..sort((a, b) => a.left.compareTo(b.left))))
+            c.text.trim(),
+        ],
     ];
   }
 
   static String toCsv(List<List<String>> rows) => rows
-      .map((r) => r.map((c) => c.contains(RegExp('[",\n]')) ? '"${c.replaceAll('"', '""')}"' : c).join(','))
+      .map(
+        (r) => r
+            .map(
+              (c) => c.contains(RegExp('[",\n]'))
+                  ? '"${c.replaceAll('"', '""')}"'
+                  : c,
+            )
+            .join(','),
+      )
       .join('\n');
 
   /// Reading-order text rebuilt from lines (useful after edits to boxes).
-  static String toText(List<OcrBlock> lines) => toTableRows(lines).map((r) => r.join('  ')).join('\n');
+  static String toText(List<OcrBlock> lines) =>
+      toTableRows(lines).map((r) => r.join('  ')).join('\n');
 }

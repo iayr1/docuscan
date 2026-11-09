@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -26,7 +24,8 @@ class DocumentDetailScreen extends ConsumerStatefulWidget {
   final String documentId;
 
   @override
-  ConsumerState<DocumentDetailScreen> createState() => _DocumentDetailScreenState();
+  ConsumerState<DocumentDetailScreen> createState() =>
+      _DocumentDetailScreenState();
 }
 
 class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
@@ -38,21 +37,31 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
         title: const Text('Rename Document'),
         content: TextField(controller: controller, autofocus: true),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('Rename')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Rename'),
+          ),
         ],
       ),
     );
 
-    if (newTitle != null && newTitle.trim().isNotEmpty && newTitle.trim() != doc.title) {
-      await ref.read(documentRepositoryProvider).rename(doc.id, newTitle.trim());
+    if (newTitle != null &&
+        newTitle.trim().isNotEmpty &&
+        newTitle.trim() != doc.title) {
+      await ref
+          .read(documentRepositoryProvider)
+          .rename(doc.id, newTitle.trim());
     }
   }
 
   Future<void> _addPageFromCamera() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ScannerScreen()),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ScannerScreen()));
   }
 
   Future<void> _addPageFromGallery(Document doc) async {
@@ -75,7 +84,12 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
       showSnack(context, 'Cannot delete the only page in a document');
       return;
     }
-    if (await confirm(context, 'Delete Page', 'Delete page ${page.index + 1}?', destructive: true)) {
+    if (await confirm(
+      context,
+      'Delete Page',
+      'Delete page ${page.index + 1}?',
+      destructive: true,
+    )) {
       await ref.read(documentRepositoryProvider).deletePages(doc.id, [page.id]);
     }
   }
@@ -99,7 +113,9 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
 
     if (updatedEdit != null && mounted) {
       await runWithProgress(context, 'Applying enhancements...', (p) async {
-        await ref.read(documentRepositoryProvider).updatePageEdit(page.id, updatedEdit);
+        await ref
+            .read(documentRepositoryProvider)
+            .updatePageEdit(page.id, updatedEdit);
       });
     }
   }
@@ -113,31 +129,36 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
   }
 
   Future<void> _exportPdf(Document doc, {bool previewFirst = true}) async {
-    final pdfBytes = await runWithProgress(context, 'Generating PDF...', (p) async {
-      return await ref.read(exportRepositoryProvider).buildPdfBytes(doc.id, const PdfExportOptions());
+    final pdfFile = await runWithProgress(context, 'Generating PDF...', (
+      p,
+    ) async {
+      return ref
+          .read(exportRepositoryProvider)
+          .exportPdfFile(doc.id, const PdfExportOptions());
     });
 
-    if (pdfBytes != null && mounted) {
-      final tempFile = File('${ref.read(fileStoreProvider).temp.path}/${doc.title.replaceAll(' ', '_')}.pdf');
-      await tempFile.writeAsBytes(pdfBytes);
-
+    if (pdfFile != null && mounted) {
       if (previewFirst) {
         Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => PdfViewerScreen(pdfPath: tempFile.path, title: doc.title)),
+          MaterialPageRoute(
+            builder: (_) =>
+                PdfViewerScreen(pdfPath: pdfFile.path, title: doc.title),
+          ),
         );
       } else {
-        await SharePlus.instance.share(ShareParams(files: [XFile(tempFile.path)], title: doc.title));
+        await SharePlus.instance.share(
+          ShareParams(files: [XFile(pdfFile.path)], title: doc.title),
+        );
       }
     }
   }
 
   Future<void> _printDocument(Document doc) async {
     await runWithProgress(context, 'Preparing print job...', (p) async {
-      final bytes = await ref.read(exportRepositoryProvider).buildPdfBytes(doc.id, const PdfExportOptions());
-      await Printing.layoutPdf(
-        onLayout: (_) => bytes,
-        name: doc.title,
-      );
+      final bytes = await ref
+          .read(exportRepositoryProvider)
+          .buildPdfBytes(doc.id, const PdfExportOptions());
+      await Printing.layoutPdf(onLayout: (_) => bytes, name: doc.title);
     });
   }
 
@@ -155,26 +176,42 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
         title: const Text('Add Document Watermark'),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(hintText: 'e.g. CONFIDENTIAL / DRAFT', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            hintText: 'e.g. CONFIDENTIAL / DRAFT',
+            border: OutlineInputBorder(),
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('Apply')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Apply'),
+          ),
         ],
       ),
     );
 
     if (watermark != null && watermark.trim().isNotEmpty && mounted) {
       await runWithProgress(context, 'Applying watermark to PDF...', (p) async {
-        final bytes = await ref.read(exportRepositoryProvider).buildPdfBytes(
+        final bytes = await ref
+            .read(exportRepositoryProvider)
+            .buildPdfBytes(
               doc.id,
               PdfExportOptions(watermark: watermark.trim()),
             );
-        final temp = File('${ref.read(fileStoreProvider).temp.path}/${doc.title}_watermarked.pdf');
-        await temp.writeAsBytes(bytes);
+        final temp = await ref.read(fileStoreProvider).newTempFile('pdf');
+        await temp.writeAsBytes(bytes, flush: true);
         if (mounted) {
           Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => PdfViewerScreen(pdfPath: temp.path, title: '${doc.title} (Watermarked)')),
+            MaterialPageRoute(
+              builder: (_) => PdfViewerScreen(
+                pdfPath: temp.path,
+                title: '${doc.title} (Watermarked)',
+              ),
+            ),
           );
         }
       });
@@ -189,7 +226,9 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
     return docAsync.when(
       data: (doc) {
         if (doc == null) {
-          return const Scaffold(body: Center(child: Text('Document not found')));
+          return const Scaffold(
+            body: Center(child: Text('Document not found')),
+          );
         }
 
         return Scaffold(
@@ -203,7 +242,9 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
                     child: Text(
                       doc.title,
                       overflow: TextOverflow.ellipsis,
-                      style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                      style: context.text.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -213,8 +254,13 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
             ),
             actions: [
               IconButton(
-                icon: Icon(doc.isFavorite ? Icons.star : Icons.star_border, color: doc.isFavorite ? Colors.amber : null),
-                onPressed: () => ref.read(documentRepositoryProvider).setFavorite(doc.id, !doc.isFavorite),
+                icon: Icon(
+                  doc.isFavorite ? Icons.star : Icons.star_border,
+                  color: doc.isFavorite ? Colors.amber : null,
+                ),
+                onPressed: () => ref
+                    .read(documentRepositoryProvider)
+                    .setFavorite(doc.id, !doc.isFavorite),
               ),
               IconButton(
                 icon: const Icon(Icons.print_outlined),
@@ -244,7 +290,9 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
                       _addPageFromGallery(doc);
                       break;
                     case 'lock':
-                      ref.read(documentRepositoryProvider).setFlags(doc.id, locked: !doc.isLocked);
+                      ref
+                          .read(documentRepositoryProvider)
+                          .setFlags(doc.id, locked: !doc.isLocked);
                       break;
                     case 'vault':
                       ref.read(vaultRepositoryProvider).moveToVault(doc.id);
@@ -252,19 +300,44 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
                       showSnack(context, 'Moved to Secure Vault');
                       break;
                     case 'delete':
-                      ref.read(documentRepositoryProvider).trashDocuments([doc.id]);
+                      ref.read(documentRepositoryProvider).trashDocuments([
+                        doc.id,
+                      ]);
                       Navigator.of(context).pop();
                       showSnack(context, 'Document moved to Trash');
                       break;
                   }
                 },
                 itemBuilder: (_) => [
-                  const PopupMenuItem(value: 'ocr', child: Text('Extract Text (OCR)')),
-                  const PopupMenuItem(value: 'watermark', child: Text('Add Watermark')),
-                  const PopupMenuItem(value: 'gallery', child: Text('Import Page from Gallery')),
-                  PopupMenuItem(value: 'lock', child: Text(doc.isLocked ? 'Unlock Document' : 'Lock with PIN')),
-                  const PopupMenuItem(value: 'vault', child: Text('Move to Secure Vault')),
-                  const PopupMenuItem(value: 'delete', child: Text('Move to Trash', style: TextStyle(color: Colors.red))),
+                  const PopupMenuItem(
+                    value: 'ocr',
+                    child: Text('Extract Text (OCR)'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'watermark',
+                    child: Text('Add Watermark'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'gallery',
+                    child: Text('Import Page from Gallery'),
+                  ),
+                  PopupMenuItem(
+                    value: 'lock',
+                    child: Text(
+                      doc.isLocked ? 'Unlock Document' : 'Lock with PIN',
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'vault',
+                    child: Text('Move to Secure Vault'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Text(
+                      'Move to Trash',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -273,15 +346,26 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
             data: (pages) => Column(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
                   color: context.colors.surfaceContainerLowest,
                   child: Row(
                     children: [
-                      Text('${pages.length} Pages · ${formatBytes(doc.fileSize)}', style: context.text.bodySmall?.copyWith(color: context.muted)),
+                      Text(
+                        '${pages.length} Pages · ${formatBytes(doc.fileSize)}',
+                        style: context.text.bodySmall?.copyWith(
+                          color: context.muted,
+                        ),
+                      ),
                       const Spacer(),
                       FilledButton.tonalIcon(
                         onPressed: () => _addPageFromGallery(doc),
-                        icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
+                        icon: const Icon(
+                          Icons.add_photo_alternate_outlined,
+                          size: 16,
+                        ),
                         label: const Text('Add Pages'),
                       ),
                     ],
@@ -290,12 +374,13 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
                 Expanded(
                   child: GridView.builder(
                     padding: const EdgeInsets.all(16),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      childAspectRatio: 0.72,
-                      crossAxisSpacing: 14,
-                      mainAxisSpacing: 14,
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 0.72,
+                          crossAxisSpacing: 14,
+                          mainAxisSpacing: 14,
+                        ),
                     itemCount: pages.length,
                     itemBuilder: (ctx, i) {
                       final p = pages[i];
@@ -310,37 +395,70 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
                                 child: Stack(
                                   fit: StackFit.expand,
                                   children: [
-                                    StoredImage(p.thumbnailPath ?? p.imagePath, fit: BoxFit.cover),
+                                    StoredImage(
+                                      p.thumbnailPath ?? p.imagePath,
+                                      fit: BoxFit.cover,
+                                    ),
                                     Positioned(
                                       top: 8,
                                       left: 8,
                                       child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                        decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(AppRadius.sm)),
-                                        child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black87,
+                                          borderRadius: BorderRadius.circular(
+                                            AppRadius.sm,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '${i + 1}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
                               Container(
-                                color: context.colors.surfaceContainerHighest.withValues(alpha: 0.5),
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                color: context.colors.surfaceContainerHighest
+                                    .withValues(alpha: 0.5),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 2,
+                                ),
                                 child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceAround,
                                   children: [
                                     IconButton(
-                                      icon: const Icon(Icons.crop_rotate, size: 18),
+                                      icon: const Icon(
+                                        Icons.crop_rotate,
+                                        size: 18,
+                                      ),
                                       tooltip: 'Enhance & Crop',
-                                      onPressed: () => _editPageEnhancement(doc, p),
+                                      onPressed: () =>
+                                          _editPageEnhancement(doc, p),
                                     ),
                                     IconButton(
-                                      icon: const Icon(Icons.draw_outlined, size: 18),
+                                      icon: const Icon(
+                                        Icons.draw_outlined,
+                                        size: 18,
+                                      ),
                                       tooltip: 'Markup & Sign',
                                       onPressed: () => _openMarkup(doc, p),
                                     ),
                                     IconButton(
-                                      icon: const Icon(Icons.rotate_right, size: 18),
+                                      icon: const Icon(
+                                        Icons.rotate_right,
+                                        size: 18,
+                                      ),
                                       tooltip: 'Rotate',
                                       onPressed: () => _rotatePage(p),
                                     ),
@@ -348,11 +466,22 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
                                       iconSize: 18,
                                       onSelected: (action) {
                                         if (action == 'dup') _duplicatePage(p);
-                                        if (action == 'del') _deletePage(doc, p, pages.length);
+                                        if (action == 'del') {
+                                          _deletePage(doc, p, pages.length);
+                                        }
                                       },
                                       itemBuilder: (_) => [
-                                        const PopupMenuItem(value: 'dup', child: Text('Duplicate')),
-                                        const PopupMenuItem(value: 'del', child: Text('Delete Page', style: TextStyle(color: Colors.red))),
+                                        const PopupMenuItem(
+                                          value: 'dup',
+                                          child: Text('Duplicate'),
+                                        ),
+                                        const PopupMenuItem(
+                                          value: 'del',
+                                          child: Text(
+                                            'Delete Page',
+                                            style: TextStyle(color: Colors.red),
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ],
@@ -377,7 +506,8 @@ class _DocumentDetailScreenState extends ConsumerState<DocumentDetailScreen> {
           ),
         );
       },
-      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(body: Center(child: Text('Error: $e'))),
     );
   }

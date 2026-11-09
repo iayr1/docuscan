@@ -16,7 +16,11 @@ import '../image_editor/image_enhancer_screen.dart';
 import 'id_card_scan_screen.dart';
 
 class ScannerScreen extends ConsumerStatefulWidget {
-  const ScannerScreen({super.key, this.targetFolderId, this.initialMode = ScanMode.document});
+  const ScannerScreen({
+    super.key,
+    this.targetFolderId,
+    this.initialMode = ScanMode.document,
+  });
   final String? targetFolderId;
   final ScanMode initialMode;
 
@@ -24,7 +28,8 @@ class ScannerScreen extends ConsumerStatefulWidget {
   ConsumerState<ScannerScreen> createState() => _ScannerScreenState();
 }
 
-class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindingObserver {
+class _ScannerScreenState extends ConsumerState<ScannerScreen>
+    with WidgetsBindingObserver {
   CameraController? _cameraController;
   List<CameraDescription> _cameras = [];
   int _selectedCameraIndex = 0;
@@ -54,7 +59,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      return;
+    }
     if (state == AppLifecycleState.inactive) {
       _cameraController?.dispose();
       setState(() => _cameraInitialized = false);
@@ -124,7 +131,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
         path = xfile.path;
       } else {
         // Fallback to image picker if camera hardware is unavailable
-        final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+        final picked = await ImagePicker().pickImage(
+          source: ImageSource.gallery,
+        );
         if (picked != null) path = picked.path;
       }
 
@@ -137,10 +146,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
 
         final draft = PageDraft(
           path,
-          edit: PageEdit(
-            quad: detected,
-            filter: _selectedMode.defaultFilter,
-          ),
+          edit: PageEdit(quad: detected, filter: _selectedMode.defaultFilter),
         );
 
         setState(() {
@@ -161,10 +167,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
       if (images.isEmpty) return;
 
       for (final img in images) {
-        _capturedPages.add(PageDraft(
-          img.path,
-          edit: PageEdit(filter: _selectedMode.defaultFilter),
-        ));
+        _capturedPages.add(
+          PageDraft(
+            img.path,
+            edit: PageEdit(filter: _selectedMode.defaultFilter),
+          ),
+        );
       }
       setState(() {});
     } catch (e) {
@@ -173,21 +181,36 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
   }
 
   Future<void> _useMlKitDocScanner() async {
+    if (_isCapturing) return;
+    setState(() => _isCapturing = true);
     try {
       final scanner = FlutterDocScanner();
       final result = await scanner.getScannedDocumentAsImages(page: 20);
       if (result == null || result.images.isEmpty) return;
 
-      for (final p in result.images) {
-        _capturedPages.add(PageDraft(
-          p,
-          edit: PageEdit(filter: _selectedMode.defaultFilter),
-          preProcessed: true,
-        ));
+      if (mounted) {
+        setState(() {
+          for (final path in result.images) {
+            _capturedPages.add(
+              PageDraft(
+                path,
+                edit: PageEdit(filter: _selectedMode.defaultFilter),
+                preProcessed: true,
+              ),
+            );
+          }
+        });
       }
-      setState(() {});
     } catch (e) {
-      if (mounted) showSnack(context, 'Native scanner unavailable: $e', error: true);
+      if (mounted) {
+        showSnack(
+          context,
+          'Auto scan failed: $e. You can still use manual capture.',
+          error: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isCapturing = false);
     }
   }
 
@@ -218,7 +241,8 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
     if (_capturedPages.isEmpty) return;
 
     final controller = TextEditingController(
-      text: 'Scan ${DateTime.now().day}/${DateTime.now().month} ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+      text:
+          'Scan ${DateTime.now().day}/${DateTime.now().month} ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
     );
 
     final title = await showDialog<String>(
@@ -228,11 +252,20 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Document Name', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            labelText: 'Document Name',
+            border: OutlineInputBorder(),
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('Save')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Save'),
+          ),
         ],
       ),
     );
@@ -243,12 +276,15 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
       context,
       'Saving and processing document...',
       (progress) async {
-        return await ref.read(documentRepositoryProvider).createDocument(
+        return await ref
+            .read(documentRepositoryProvider)
+            .createDocument(
               title: title.trim(),
               folderId: widget.targetFolderId,
               mode: _selectedMode,
               pages: _capturedPages,
-              onProgress: (done, total) => progress('Processing page $done of $total...', done / total),
+              onProgress: (done, total) =>
+                  progress('Processing page $done of $total...', done / total),
             );
       },
     );
@@ -277,9 +313,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
                   _buildCameraPreview(),
                   if (_gridEnabled) _buildGridOverlay(),
                   if (_isCapturing)
-                    Container(
-                      color: Colors.white.withValues(alpha: 0.3),
-                    ),
+                    Container(color: Colors.white.withValues(alpha: 0.3)),
                 ],
               ),
             ),
@@ -317,7 +351,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
                 FlashMode.torch => Icons.highlight,
                 FlashMode.off => Icons.flash_off,
               },
-              color: _flashMode == FlashMode.off ? Colors.white54 : Colors.amber,
+              color: _flashMode == FlashMode.off
+                  ? Colors.white54
+                  : Colors.amber,
             ),
             tooltip: 'Flash mode',
             onPressed: _toggleFlash,
@@ -331,12 +367,15 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
             onPressed: () => setState(() => _gridEnabled = !_gridEnabled),
           ),
           IconButton(
-            icon: const Icon(Icons.document_scanner_outlined, color: AppColors.brandDark),
-            tooltip: 'AI ML-Kit Auto Scanner',
-            onPressed: _useMlKitDocScanner,
+            icon: const Icon(Icons.camera_alt_outlined, color: Colors.white),
+            tooltip: 'Manual single capture',
+            onPressed: _isCapturing ? null : _capture,
           ),
           IconButton(
-            icon: const Icon(Icons.flip_camera_ios_outlined, color: Colors.white),
+            icon: const Icon(
+              Icons.flip_camera_ios_outlined,
+              color: Colors.white,
+            ),
             tooltip: 'Switch camera',
             onPressed: _toggleCamera,
           ),
@@ -347,18 +386,23 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
 
   Widget _buildCameraPreview() {
     if (_cameraInitialized && _cameraController != null) {
-      return Center(
-        child: CameraPreview(_cameraController!),
-      );
+      return Center(child: CameraPreview(_cameraController!));
     }
 
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.camera_alt_outlined, size: 64, color: Colors.white30),
+          const Icon(
+            Icons.camera_alt_outlined,
+            size: 64,
+            color: Colors.white30,
+          ),
           const SizedBox(height: 12),
-          const Text('Camera preview not active', style: TextStyle(color: Colors.white60)),
+          const Text(
+            'Camera preview not active',
+            style: TextStyle(color: Colors.white60),
+          ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _pickFromGallery,
@@ -371,11 +415,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
   }
 
   Widget _buildGridOverlay() {
-    return IgnorePointer(
-      child: CustomPaint(
-        painter: _GridOverlayPainter(),
-      ),
-    );
+    return IgnorePointer(child: CustomPaint(painter: _GridOverlayPainter()));
   }
 
   Widget _buildCapturedTray() {
@@ -386,8 +426,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
       child: Row(
         children: [
           Text(
-            '${_capturedPages.length} ${ _capturedPages.length == 1 ? 'Page' : 'Pages' }',
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+            '${_capturedPages.length} ${_capturedPages.length == 1 ? 'Page' : 'Pages'}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -406,20 +450,34 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
                         height: 60,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: AppColors.brandDark, width: 1.5),
+                          border: Border.all(
+                            color: AppColors.brandDark,
+                            width: 1.5,
+                          ),
                         ),
                         clipBehavior: Clip.antiAlias,
-                        child: Image.file(File(page.sourcePath), fit: BoxFit.cover),
+                        child: Image.file(
+                          File(page.sourcePath),
+                          fit: BoxFit.cover,
+                        ),
                       ),
                       Positioned(
                         top: 2,
                         right: 2,
                         child: InkWell(
-                          onTap: () => setState(() => _capturedPages.removeAt(i)),
+                          onTap: () =>
+                              setState(() => _capturedPages.removeAt(i)),
                           child: Container(
-                            decoration: const BoxDecoration(color: Colors.black87, shape: BoxShape.circle),
+                            decoration: const BoxDecoration(
+                              color: Colors.black87,
+                              shape: BoxShape.circle,
+                            ),
                             padding: const EdgeInsets.all(2),
-                            child: const Icon(Icons.close, size: 12, color: Colors.white),
+                            child: const Icon(
+                              Icons.close,
+                              size: 12,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ),
@@ -451,7 +509,11 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
               onTap: () {
                 if (mode == ScanMode.idCard) {
                   Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => IdCardScanScreen(targetFolderId: widget.targetFolderId)),
+                    MaterialPageRoute(
+                      builder: (_) => IdCardScanScreen(
+                        targetFolderId: widget.targetFolderId,
+                      ),
+                    ),
                   );
                 } else {
                   setState(() => _selectedMode = mode);
@@ -482,31 +544,50 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
         children: [
           // Gallery import
           IconButton(
-            icon: const Icon(Icons.photo_library_outlined, color: Colors.white, size: 30),
+            icon: const Icon(
+              Icons.photo_library_outlined,
+              color: Colors.white,
+              size: 30,
+            ),
             tooltip: 'Import images',
             onPressed: _pickFromGallery,
           ),
 
-          // Shutter Button
-          InkWell(
-            onTap: _isCapturing ? null : _capture,
-            borderRadius: BorderRadius.circular(99),
-            child: Container(
-              width: 76,
-              height: 76,
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 3.5),
-              ),
+          // Primary scan action uses the platform document scanner's native
+          // edge detection and perspective correction. Manual capture remains
+          // available in the top bar for unsupported devices.
+          Tooltip(
+            message: 'Auto scan with document edge detection',
+            child: InkWell(
+              onTap: _isCapturing ? null : _useMlKitDocScanner,
+              borderRadius: BorderRadius.circular(99),
               child: Container(
-                decoration: const BoxDecoration(
-                  color: AppColors.brand,
+                width: 76,
+                height: 76,
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
                   shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 3.5),
                 ),
-                child: _isCapturing
-                    ? const Padding(padding: EdgeInsets.all(22), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Icon(Icons.camera_alt, color: Colors.white, size: 32),
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: AppColors.brand,
+                    shape: BoxShape.circle,
+                  ),
+                  child: _isCapturing
+                      ? const Padding(
+                          padding: EdgeInsets.all(22),
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.document_scanner_rounded,
+                          color: Colors.white,
+                          size: 32,
+                        ),
+                ),
               ),
             ),
           ),
@@ -520,7 +601,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> with WidgetsBindi
                   textColor: Colors.black,
                   child: FilledButton.tonal(
                     onPressed: _finishAndSave,
-                    style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16)),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                    ),
                     child: const Text('Save'),
                   ),
                 ),

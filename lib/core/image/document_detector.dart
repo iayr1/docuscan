@@ -13,13 +13,11 @@ class DetectionResult {
   final double confidence;
 }
 
-/// Finds the dominant document (a bright, roughly quadrilateral region that
-/// contrasts with its surroundings) in a grayscale frame.
-///
-/// Pipeline: downscale → blur → Otsu binarisation → largest connected
-/// component → convex hull → maximum-area inscribed quadrilateral → validation.
-/// It runs in a few milliseconds on a 160 px frame, so it is used both for
-/// still images (in an isolate) and for live camera preview frames.
+/// Finds a document in a grayscale frame using a small, multi-pass vision
+/// pipeline. It evaluates both light-on-dark and dark-on-light regions at
+/// several thresholds, which is more robust to colored paper and varied desks
+/// than a single global threshold. The work image is deliberately small so it
+/// remains suitable for camera preview and still image processing.
 abstract final class DocumentDetector {
   static const _workEdge = 180;
 
@@ -62,12 +60,41 @@ abstract final class DocumentDetector {
         nLo++;
       }
     }
-    if (nLo == 0 || nHi == 0 || (hi / nHi - lo / nLo) < 28) return null;
+    if (nLo == 0 || nHi == 0 || (hi / nHi - lo / nLo) < 18) return null;
 
-    final mask = Uint8List(w * h);
-    for (var i = 0; i < mask.length; i++) {
-      mask[i] = blurred[i] > threshold ? 1 : 0;
+    DetectionResult? best;
+    var bestScore = 0.0;
+    final thresholds = <int>{
+      threshold,
+      (threshold - 24).clamp(24, 232),
+      (threshold + 24).clamp(24, 232),
+    };
+    for (final cut in thresholds) {
+      for (final lightForeground in [true, false]) {
+        final mask = Uint8List(w * h);
+        for (var i = 0; i < mask.length; i++) {
+          final isLight = blurred[i] > cut;
+          mask[i] = isLight == lightForeground ? 1 : 0;
+        }
+        final candidate = _candidate(mask, w, h);
+        if (candidate == null) continue;
+        final area = candidate.quad.area;
+        // Prefer a solid, prominent page while avoiding the frame itself and
+        // tiny text/objects that happen to form a rectangle.
+        final areaScore = (1 - (area - 0.62).abs() * 0.28).clamp(0.72, 1.0);
+        final score = candidate.confidence * areaScore;
+        if (score > bestScore) {
+          best = candidate;
+          bestScore = score;
+        }
+      }
     }
+    return best == null
+        ? null
+        : DetectionResult(best.quad, bestScore.clamp(0.0, 1.0));
+  }
+
+  static DetectionResult? _candidate(Uint8List mask, int w, int h) {
     final component = _largestComponent(mask, w, h);
     if (component == null) return null;
     final (labels, size) = component;
@@ -78,7 +105,8 @@ abstract final class DocumentDetector {
     for (var y = 0; y < h; y++) {
       for (var x = 0; x < w; x++) {
         if (labels[y * w + x] == 0) continue;
-        final edge = x == 0 ||
+        final edge =
+            x == 0 ||
             y == 0 ||
             x == w - 1 ||
             y == h - 1 ||
@@ -104,7 +132,7 @@ abstract final class DocumentDetector {
     final area = quad.area;
     if (area < 0.12 || area > 0.985) return null;
     final fill = (size / total) / area; // how much of the quad is "paper"
-    if (fill < 0.82) return null;
+    if (fill < 0.76) return null;
     return DetectionResult(quad, fill.clamp(0.0, 1.0));
   }
 
@@ -152,17 +180,20 @@ abstract final class DocumentDetector {
     if (points.length < 3) return List.of(points);
     final pts = List.of(points)
       ..sort((a, b) => a.x != b.x ? a.x.compareTo(b.x) : a.y.compareTo(b.y));
-    double cross(Pt o, Pt a, Pt b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    double cross(Pt o, Pt a, Pt b) =>
+        (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
     final lower = <Pt>[];
     for (final p in pts) {
-      while (lower.length >= 2 && cross(lower[lower.length - 2], lower.last, p) <= 0) {
+      while (lower.length >= 2 &&
+          cross(lower[lower.length - 2], lower.last, p) <= 0) {
         lower.removeLast();
       }
       lower.add(p);
     }
     final upper = <Pt>[];
     for (final p in pts.reversed) {
-      while (upper.length >= 2 && cross(upper[upper.length - 2], upper.last, p) <= 0) {
+      while (upper.length >= 2 &&
+          cross(upper[upper.length - 2], upper.last, p) <= 0) {
         upper.removeLast();
       }
       upper.add(p);
@@ -177,8 +208,9 @@ abstract final class DocumentDetector {
   static List<Pt>? maxAreaQuad(List<Pt> hull) {
     if (hull.length < 4) return null;
     // Seed with the classic extreme-point corners.
-    Pt pick(double Function(Pt) score, bool max) =>
-        hull.reduce((a, b) => (max ? score(a) >= score(b) : score(a) <= score(b)) ? a : b);
+    Pt pick(double Function(Pt) score, bool max) => hull.reduce(
+      (a, b) => (max ? score(a) >= score(b) : score(a) <= score(b)) ? a : b,
+    );
     var quad = [
       pick((p) => p.x + p.y, false),
       pick((p) => p.x - p.y, true),
@@ -195,7 +227,10 @@ abstract final class DocumentDetector {
 
     // Sub-sample long hulls to keep refinement cheap.
     final candidates = hull.length > 120
-        ? [for (var i = 0; i < hull.length; i += (hull.length / 120).ceil()) hull[i]]
+        ? [
+            for (var i = 0; i < hull.length; i += (hull.length / 120).ceil())
+              hull[i],
+          ]
         : hull;
     var best = area(quad);
     for (var iter = 0; iter < 3; iter++) {
@@ -204,7 +239,8 @@ abstract final class DocumentDetector {
         for (final c in candidates) {
           final trial = List.of(quad)..[k] = c;
           final a = area(trial);
-          if (a > best + 1e-6 && Quad(trial[0], trial[1], trial[2], trial[3]).isConvex) {
+          if (a > best + 1e-6 &&
+              Quad(trial[0], trial[1], trial[2], trial[3]).isConvex) {
             best = a;
             quad = trial;
             improved = true;
@@ -221,12 +257,18 @@ abstract final class DocumentDetector {
     final cx = pts.fold<double>(0, (s, p) => s + p.x) / 4;
     final cy = pts.fold<double>(0, (s, p) => s + p.y) / 4;
     final sorted = List.of(pts)
-      ..sort((a, b) => math.atan2(a.y - cy, a.x - cx).compareTo(math.atan2(b.y - cy, b.x - cx)));
+      ..sort(
+        (a, b) => math
+            .atan2(a.y - cy, a.x - cx)
+            .compareTo(math.atan2(b.y - cy, b.x - cx)),
+      );
     // atan2 ascending starts near −π (left), goes up through top (−π/2) on screen coordinates.
     // Rotate the list so the point with smallest x+y comes first.
     var start = 0;
     for (var i = 1; i < 4; i++) {
-      if (sorted[i].x + sorted[i].y < sorted[start].x + sorted[start].y) start = i;
+      if (sorted[i].x + sorted[i].y < sorted[start].x + sorted[start].y) {
+        start = i;
+      }
     }
     return [for (var i = 0; i < 4; i++) sorted[(start + i) % 4]];
   }

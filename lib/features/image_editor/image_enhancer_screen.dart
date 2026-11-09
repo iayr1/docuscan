@@ -20,7 +20,8 @@ class ImageEnhancerScreen extends ConsumerStatefulWidget {
   final String title;
 
   @override
-  ConsumerState<ImageEnhancerScreen> createState() => _ImageEnhancerScreenState();
+  ConsumerState<ImageEnhancerScreen> createState() =>
+      _ImageEnhancerScreenState();
 }
 
 class _ImageEnhancerScreenState extends ConsumerState<ImageEnhancerScreen> {
@@ -34,9 +35,14 @@ class _ImageEnhancerScreenState extends ConsumerState<ImageEnhancerScreen> {
     ('Auto', ScanFilter.auto, Icons.auto_fix_high),
     ('Magic Color', ScanFilter.magic, Icons.color_lens_outlined),
     ('B & W', ScanFilter.blackWhite, Icons.contrast),
+    ('Clear Text', ScanFilter.clearText, Icons.text_fields_rounded),
     ('Grayscale', ScanFilter.grayscale, Icons.filter_b_and_w),
+    ('Soft Gray', ScanFilter.softGray, Icons.grain_rounded),
     ('Whiteboard', ScanFilter.whiteboard, Icons.dashboard_outlined),
+    ('Vivid', ScanFilter.vivid, Icons.palette_outlined),
     ('Photo', ScanFilter.photo, Icons.camera_alt_outlined),
+    ('Low Light', ScanFilter.lowLight, Icons.wb_sunny_outlined),
+    ('Eco Print', ScanFilter.ecoPrint, Icons.eco_outlined),
   ];
 
   @override
@@ -46,31 +52,27 @@ class _ImageEnhancerScreenState extends ConsumerState<ImageEnhancerScreen> {
   }
 
   Future<void> _openCrop() async {
-    final result = await Navigator.of(context).push<({Quad quad, int rotation})>(
-      MaterialPageRoute(
-        builder: (_) => ManualCropScreen(
-          imagePath: widget.originalImagePath,
-          initialQuad: _edit.quad,
-          initialRotation: _edit.rotation,
-        ),
-      ),
-    );
+    final result = await Navigator.of(context)
+        .push<({Quad quad, int rotation})>(
+          MaterialPageRoute(
+            builder: (_) => ManualCropScreen(
+              imagePath: widget.originalImagePath,
+              initialQuad: _edit.quad,
+              initialRotation: _edit.rotation,
+            ),
+          ),
+        );
 
     if (result != null && mounted) {
       setState(() {
-        _edit = _edit.copyWith(
-          quad: result.quad,
-          rotation: result.rotation,
-        );
+        _edit = _edit.copyWith(quad: result.quad, rotation: result.rotation);
       });
     }
   }
 
   void _rotate() {
     setState(() {
-      _edit = _edit.copyWith(
-        rotation: (_edit.rotation + 1) % 4,
-      );
+      _edit = _edit.copyWith(rotation: (_edit.rotation + 1) % 4);
     });
   }
 
@@ -118,7 +120,9 @@ class _ImageEnhancerScreenState extends ConsumerState<ImageEnhancerScreen> {
                     RotatedBox(
                       quarterTurns: _edit.rotation,
                       child: ColorFiltered(
-                        colorFilter: _getColorFilter(_comparing ? ScanFilter.original : _edit.filter),
+                        colorFilter: _getColorFilter(
+                          _comparing ? ScanFilter.original : _edit.filter,
+                        ),
                         child: Image.file(
                           File(widget.originalImagePath),
                           fit: BoxFit.contain,
@@ -130,13 +134,23 @@ class _ImageEnhancerScreenState extends ConsumerState<ImageEnhancerScreen> {
                       Positioned(
                         top: 16,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.black87,
                             borderRadius: BorderRadius.circular(AppRadius.pill),
                             border: Border.all(color: Colors.white24),
                           ),
-                          child: const Text('ORIGINAL CAPTURE', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                          child: const Text(
+                            'ORIGINAL CAPTURE',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                       ),
                   ],
@@ -174,7 +188,12 @@ class _ImageEnhancerScreenState extends ConsumerState<ImageEnhancerScreen> {
                       _comparing = !_comparing;
                     });
                   },
-                  icon: Icon(_comparing ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18),
+                  icon: Icon(
+                    _comparing
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    size: 18,
+                  ),
                   label: Text(_comparing ? 'Show Edit' : 'Compare'),
                 ),
               ],
@@ -185,7 +204,9 @@ class _ImageEnhancerScreenState extends ConsumerState<ImageEnhancerScreen> {
           Container(
             color: const Color(0xFF1B2320),
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            child: _activeSliderTab == 0 ? _buildFilterPresetsRow() : _buildManualSlidersColumn(),
+            child: _activeSliderTab == 0
+                ? _buildFilterPresetsRow()
+                : _buildManualSlidersColumn(),
           ),
         ],
       ),
@@ -214,7 +235,9 @@ class _ImageEnhancerScreenState extends ConsumerState<ImageEnhancerScreen> {
               width: 76,
               padding: const EdgeInsets.symmetric(vertical: 8),
               decoration: BoxDecoration(
-                color: isSelected ? AppColors.brand.withValues(alpha: 0.25) : Colors.black26,
+                color: isSelected
+                    ? AppColors.brand.withValues(alpha: 0.25)
+                    : Colors.black26,
                 borderRadius: BorderRadius.circular(AppRadius.md),
                 border: Border.all(
                   color: isSelected ? AppColors.brandDark : Colors.white12,
@@ -224,7 +247,11 @@ class _ImageEnhancerScreenState extends ConsumerState<ImageEnhancerScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(item.$3, color: isSelected ? AppColors.brandDark : Colors.white70, size: 26),
+                  Icon(
+                    item.$3,
+                    color: isSelected ? AppColors.brandDark : Colors.white70,
+                    size: 26,
+                  ),
                   const SizedBox(height: 6),
                   Text(
                     item.$1,
@@ -234,7 +261,9 @@ class _ImageEnhancerScreenState extends ConsumerState<ImageEnhancerScreen> {
                     style: TextStyle(
                       color: isSelected ? Colors.white : Colors.white70,
                       fontSize: 11,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                     ),
                   ),
                 ],
@@ -256,21 +285,32 @@ class _ImageEnhancerScreenState extends ConsumerState<ImageEnhancerScreen> {
           value: adj.brightness,
           min: -0.5,
           max: 0.5,
-          onChanged: (v) => setState(() => _edit = _edit.copyWith(adjustments: adj.copyWith(brightness: v))),
+          onChanged: (v) => setState(
+            () => _edit = _edit.copyWith(
+              adjustments: adj.copyWith(brightness: v),
+            ),
+          ),
         ),
         _buildSlider(
           label: 'Contrast',
           value: adj.contrast,
           min: -0.5,
           max: 0.5,
-          onChanged: (v) => setState(() => _edit = _edit.copyWith(adjustments: adj.copyWith(contrast: v))),
+          onChanged: (v) => setState(
+            () =>
+                _edit = _edit.copyWith(adjustments: adj.copyWith(contrast: v)),
+          ),
         ),
         _buildSlider(
           label: 'Saturation',
           value: adj.saturation,
           min: -1.0,
           max: 1.0,
-          onChanged: (v) => setState(() => _edit = _edit.copyWith(adjustments: adj.copyWith(saturation: v))),
+          onChanged: (v) => setState(
+            () => _edit = _edit.copyWith(
+              adjustments: adj.copyWith(saturation: v),
+            ),
+          ),
         ),
       ],
     );
@@ -287,7 +327,10 @@ class _ImageEnhancerScreenState extends ConsumerState<ImageEnhancerScreen> {
       children: [
         SizedBox(
           width: 80,
-          child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
         ),
         Expanded(
           child: Slider(
@@ -315,45 +358,211 @@ class _ImageEnhancerScreenState extends ConsumerState<ImageEnhancerScreen> {
     switch (filter) {
       case ScanFilter.blackWhite:
         return const ColorFilter.matrix([
-          1.5, 1.5, 1.5, 0, -160,
-          1.5, 1.5, 1.5, 0, -160,
-          1.5, 1.5, 1.5, 0, -160,
-          0, 0, 0, 1, 0,
+          1.5,
+          1.5,
+          1.5,
+          0,
+          -160,
+          1.5,
+          1.5,
+          1.5,
+          0,
+          -160,
+          1.5,
+          1.5,
+          1.5,
+          0,
+          -160,
+          0,
+          0,
+          0,
+          1,
+          0,
         ]);
       case ScanFilter.grayscale:
+      case ScanFilter.softGray:
         return const ColorFilter.matrix([
-          0.299, 0.587, 0.114, 0, 0,
-          0.299, 0.587, 0.114, 0, 0,
-          0.299, 0.587, 0.114, 0, 0,
-          0, 0, 0, 1, 0,
+          0.299,
+          0.587,
+          0.114,
+          0,
+          0,
+          0.299,
+          0.587,
+          0.114,
+          0,
+          0,
+          0.299,
+          0.587,
+          0.114,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+        ]);
+      case ScanFilter.clearText:
+        return const ColorFilter.matrix([
+          0.478,
+          0.939,
+          0.182,
+          0,
+          -110,
+          0.478,
+          0.939,
+          0.182,
+          0,
+          -110,
+          0.478,
+          0.939,
+          0.182,
+          0,
+          -110,
+          0,
+          0,
+          0,
+          1,
+          0,
+        ]);
+      case ScanFilter.vivid:
+        return const ColorFilter.matrix([
+          1.35,
+          -0.17,
+          -0.17,
+          0,
+          0,
+          -0.17,
+          1.35,
+          -0.17,
+          0,
+          0,
+          -0.17,
+          -0.17,
+          1.35,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+        ]);
+      case ScanFilter.lowLight:
+        return const ColorFilter.matrix([
+          1.1,
+          0,
+          0,
+          0,
+          22,
+          0,
+          1.1,
+          0,
+          0,
+          22,
+          0,
+          0,
+          1.1,
+          0,
+          22,
+          0,
+          0,
+          0,
+          1,
+          0,
         ]);
       case ScanFilter.magic:
         return const ColorFilter.matrix([
-          1.2, 0, 0, 0, 15,
-          0, 1.25, 0, 0, 15,
-          0, 0, 1.2, 0, 15,
-          0, 0, 0, 1, 0,
+          1.2,
+          0,
+          0,
+          0,
+          15,
+          0,
+          1.25,
+          0,
+          0,
+          15,
+          0,
+          0,
+          1.2,
+          0,
+          15,
+          0,
+          0,
+          0,
+          1,
+          0,
         ]);
       case ScanFilter.whiteboard:
         return const ColorFilter.matrix([
-          1.3, 0, 0, 0, 20,
-          0, 1.3, 0, 0, 20,
-          0, 0, 1.3, 0, 20,
-          0, 0, 0, 1, 0,
+          1.3,
+          0,
+          0,
+          0,
+          20,
+          0,
+          1.3,
+          0,
+          0,
+          20,
+          0,
+          0,
+          1.3,
+          0,
+          20,
+          0,
+          0,
+          0,
+          1,
+          0,
         ]);
       case ScanFilter.auto:
         return const ColorFilter.matrix([
-          1.1, 0, 0, 0, 10,
-          0, 1.1, 0, 0, 10,
-          0, 0, 1.1, 0, 10,
-          0, 0, 0, 1, 0,
+          1.1,
+          0,
+          0,
+          0,
+          10,
+          0,
+          1.1,
+          0,
+          0,
+          10,
+          0,
+          0,
+          1.1,
+          0,
+          10,
+          0,
+          0,
+          0,
+          1,
+          0,
         ]);
       default:
         return const ColorFilter.matrix([
-          1, 0, 0, 0, 0,
-          0, 1, 0, 0, 0,
-          0, 0, 1, 0, 0,
-          0, 0, 0, 1, 0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
         ]);
     }
   }
