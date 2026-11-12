@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
-import '../../core/utils/formatters.dart';
 import '../../data/models/models.dart';
 import '../../shared/widgets/common.dart';
 import '../../shared/widgets/document_widgets.dart';
@@ -16,49 +15,31 @@ class FavoritesScreen extends ConsumerWidget {
     final favoritesAsync = ref.watch(documentsProvider(const DocumentQuery(favoritesOnly: true)));
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Favorite Documents'),
-      ),
-      body: favoritesAsync.when(
-        data: (docs) => docs.isEmpty
+      appBar: AppBar(title: const Text('Favorites')),
+      body: AsyncView(
+        favoritesAsync,
+        builder: (docs) => docs.isEmpty
             ? const EmptyState(
-                icon: Icons.star_border,
+                icon: Icons.star_outline_rounded,
                 title: 'No favorites yet',
-                message: 'Tap the star icon on any document to quickly access it from here.',
+                message: 'Tap the star on any document to pin it here.',
               )
-            : ListView.separated(
-                padding: const EdgeInsets.all(16),
+            : ListView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 itemCount: docs.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
                 itemBuilder: (ctx, i) {
                   final d = docs[i];
-                  return Card(
-                    child: ListTile(
-                      leading: SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: StoredImage(d.thumbnailPath),
-                        ),
-                      ),
-                      title: Text(d.title, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Text('${d.pageCount} pages · ${formatBytes(d.fileSize)} · ${formatDate(d.updatedAt)}'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.star, color: Colors.amber),
-                        tooltip: 'Unstar',
-                        onPressed: () => ref.read(documentRepositoryProvider).setFavorite(d.id, !d.isFavorite),
-                      ),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => DocumentDetailScreen(documentId: d.id)),
-                      ),
+                  return DocumentListTile(
+                    doc: d,
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DocumentDetailScreen(documentId: d.id))),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.star_rounded, color: Color(0xFFFFC107)),
+                      tooltip: 'Remove from favorites',
+                      onPressed: () => ref.read(documentRepositoryProvider).setFavorite(d.id, false),
                     ),
                   );
                 },
               ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
       ),
     );
   }

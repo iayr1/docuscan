@@ -1,0 +1,38 @@
+SHORT:
+Scan to PDF, extract text with OCR and edit PDFs – fully offline and private.
+FULL:
+DocuScan turns your phone into a fast, private document scanner and PDF toolkit. Everything runs on your device – no account, no ads, no cloud uploads.
+
+SCAN ANYTHING
+• Multi-page scanning with automatic edge detection and perspective correction
+• Scan modes for documents, receipts, books, whiteboards, notes, certificates and photos
+• ID card mode puts the front and back on one page
+• Crop, rotate, and enhance with filters like black & white, grayscale and colour boost
+• Read QR codes and barcodes
+
+EXTRACT TEXT (OCR)
+• On-device text recognition for English and Latin scripts, Hindi/Marathi (Devanagari), Chinese, Japanese and Korean
+• Copy, share or save recognised text
+• Create searchable PDFs and find any document by the words inside it
+
+COMPLETE PDF TOOLKIT
+• Images to PDF, merge, split and compress PDFs
+• Add or remove PDF passwords
+• Convert Word, Excel, PowerPoint and text files to PDF
+• Export PDFs to Word, Excel or plain text
+• Add watermarks and print directly from the app
+
+SIGN & ANNOTATE
+• Draw and save your signature, add stamps, highlight, and redact sensitive details
+
+ORGANISE
+• Folders, favourites, tags, search and sorting
+• Recycle bin with 30-day restore, duplicate finder and storage analyser
+
+PRIVATE BY DESIGN
+• Optional app lock with PIN, fingerprint or face unlock
+• Lock individual documents
+• Secure Vault keeps sensitive files encrypted with AES-256 on your device
+• Works completely offline – your documents never leave your phone
+
+A clean, modern design with light and dark themes makes managing paperwork simple.

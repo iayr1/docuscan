@@ -8,6 +8,7 @@ import '../../core/utils/formatters.dart';
 import '../../data/models/models.dart';
 import '../../shared/widgets/common.dart';
 import '../../shared/widgets/document_widgets.dart';
+import '../../shared/widgets/security_widgets.dart';
 import '../document_editor/document_detail_screen.dart';
 
 class SecureVaultScreen extends ConsumerStatefulWidget {
@@ -17,247 +18,219 @@ class SecureVaultScreen extends ConsumerStatefulWidget {
   ConsumerState<SecureVaultScreen> createState() => _SecureVaultScreenState();
 }
 
-class _SecureVaultScreenState extends ConsumerState<SecureVaultScreen> {
+class _SecureVaultScreenState extends ConsumerState<SecureVaultScreen> with WidgetsBindingObserver {
   bool _unlocked = false;
   bool _checking = true;
   bool _hasPin = false;
-
-  final TextEditingController _pinController = TextEditingController();
+  bool _hasBiometrics = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkSecurity();
   }
 
   @override
   void dispose() {
-    _pinController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-lock whenever the app goes to the background.
+    if (state == AppLifecycleState.paused && _unlocked) setState(() => _unlocked = false);
   }
 
   Future<void> _checkSecurity() async {
     final sec = ref.read(securityServiceProvider);
     final has = await sec.hasPin();
+    final bio = await sec.biometricKind();
+    if (!mounted) return;
     setState(() {
       _hasPin = has;
+      _hasBiometrics = bio != BiometricKind.none;
       _checking = false;
     });
-
-    if (has) {
-      // Try biometric auth automatically if available
-      final bio = await sec.biometricKind();
-      if (bio != BiometricKind.none) {
-        final ok = await sec.authenticateBiometric('Unlock Secure Vault');
-        if (ok && mounted) {
-          setState(() => _unlocked = true);
-        }
-      }
-    }
+    if (has && _hasBiometrics) _tryBiometric();
   }
 
-  Future<void> _setupPin() async {
-    final pin = _pinController.text.trim();
-    if (pin.length < 4) {
-      showSnack(context, 'PIN must be at least 4 digits');
-      return;
-    }
+  Future<void> _tryBiometric() async {
+    final ok = await ref.read(securityServiceProvider).authenticateBiometric('Unlock Secure Vault');
+    if (ok && mounted) setState(() => _unlocked = true);
+  }
 
+  Future<void> _createPin() async {
+    final pin = await promptNewPin(context, title: 'Create vault PIN');
+    if (pin == null) return;
     await ref.read(securityServiceProvider).setPin(pin);
-    _pinController.clear();
+    if (!mounted) return;
     setState(() {
       _hasPin = true;
       _unlocked = true;
     });
-    if (mounted) showSnack(context, 'Secure PIN set successfully');
-  }
-
-  Future<void> _verifyPin() async {
-    final pin = _pinController.text.trim();
-    final ok = await ref.read(securityServiceProvider).verifyPin(pin);
-    _pinController.clear();
-
-    if (ok) {
-      setState(() => _unlocked = true);
-    } else {
-      if (mounted) showSnack(context, 'Incorrect PIN', error: true);
-    }
+    showSnack(context, 'PIN created — your vault is ready');
   }
 
   Future<void> _addDocumentToVault() async {
-    // Show picker for non-vaulted documents
-    final docs = await ref.read(documentRepositoryProvider).listDocuments(const DocumentQuery());
-    final regularDocs = docs.where((d) => !d.inVault && !d.isDeleted).toList();
-
+    final docs = await ref.read(documentRepositoryProvider).listDocuments(const DocumentQuery(includeHidden: true));
     if (!mounted) return;
-    if (regularDocs.isEmpty) {
-      showSnack(context, 'No regular documents to move to vault');
+    if (docs.isEmpty) {
+      showSnack(context, 'There are no documents in your library to protect');
       return;
     }
 
     final chosen = await showModalBottomSheet<Document>(
       context: context,
+      isScrollControlled: true,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Padding(padding: EdgeInsets.all(16), child: Text('Select Document to Encrypt & Lock', style: TextStyle(fontWeight: FontWeight.bold))),
-            Expanded(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: regularDocs.length,
-                itemBuilder: (ctx, i) {
-                  final d = regularDocs[i];
-                  return ListTile(
-                    title: Text(d.title),
-                    subtitle: Text('${d.pageCount} pages · ${formatBytes(d.fileSize)}'),
-                    trailing: const Icon(Icons.lock_outline),
-                    onTap: () => Navigator.pop(ctx, d),
-                  );
-                },
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.75),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
+                child: Text('Choose a document to encrypt', style: ctx.text.titleMedium),
               ),
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                child: Text('It will be hidden from your library and search.', style: ctx.text.bodySmall?.copyWith(color: ctx.muted)),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  itemCount: docs.length,
+                  itemBuilder: (ctx, i) => DocumentListTile(
+                    doc: docs[i],
+                    onTap: () => Navigator.pop(ctx, docs[i]),
+                    trailing: Icon(Icons.chevron_right_rounded, color: ctx.muted),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
 
-    if (chosen != null && mounted) {
-      await runWithProgress(context, 'Encrypting and moving to vault...', (p) async {
-        await ref.read(vaultRepositoryProvider).moveToVault(chosen.id);
-      });
-      if (mounted) showSnack(context, 'Document encrypted and moved to Secure Vault');
-    }
+    if (chosen == null || !mounted) return;
+    final ok = await runWithProgress(context, 'Encrypting “${chosen.title}”…', (p) async {
+      await ref.read(vaultRepositoryProvider).moveToVault(chosen.id);
+      return true;
+    });
+    if (ok == true && mounted) showSnack(context, 'Encrypted and moved to the vault');
   }
 
   Future<void> _removeFromVault(Document doc) async {
-    if (await confirm(context, 'Remove from Vault', 'Decrypt "${doc.title}" and return to normal library?')) {
-      await runWithProgress(context, 'Decrypting document...', (p) async {
-        await ref.read(vaultRepositoryProvider).removeFromVault(doc.id);
-      });
-      if (mounted) showSnack(context, 'Document returned to library');
-    }
+    if (!await confirm(context, 'Remove from vault', 'Decrypt “${doc.title}” and return it to your library?', confirmLabel: 'Decrypt')) return;
+    if (!mounted) return;
+    final ok = await runWithProgress(context, 'Decrypting…', (p) async {
+      await ref.read(vaultRepositoryProvider).removeFromVault(doc.id);
+      return true;
+    });
+    if (ok == true && mounted) showSnack(context, 'Returned to your library');
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_checking) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+    if (_checking) return const Scaffold(body: LoadingView());
 
-    if (!_unlocked) {
+    if (!_hasPin) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Secure Vault')),
+        appBar: AppBar(),
         body: Center(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(32),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 76,
-                    height: 76,
-                    decoration: BoxDecoration(
-                      color: AppColors.brand.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.shield_outlined, size: 40, color: AppColors.brand),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    _hasPin ? 'Unlock Vault' : 'Setup Vault PIN',
-                    style: context.text.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _hasPin
-                        ? 'Enter your security PIN or use biometrics to access AES-256 encrypted documents.'
-                        : 'Create a 4–8 digit PIN to safeguard your private documents.',
-                    textAlign: TextAlign.center,
-                    style: context.text.bodyMedium?.copyWith(color: context.muted),
-                  ),
-                  const SizedBox(height: 24),
-                  TextField(
-                    controller: _pinController,
-                    obscureText: true,
-                    keyboardType: TextInputType.number,
-                    autofocus: true,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 24, letterSpacing: 8, fontWeight: FontWeight.bold),
-                    decoration: const InputDecoration(
-                      hintText: '••••',
-                      border: OutlineInputBorder(),
-                    ),
-                    onSubmitted: (_) => _hasPin ? _verifyPin() : _setupPin(),
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: FilledButton.icon(
-                      onPressed: _hasPin ? _verifyPin : _setupPin,
-                      icon: const Icon(Icons.lock_open),
-                      label: Text(_hasPin ? 'Unlock' : 'Set PIN & Open Vault'),
-                    ),
-                  ),
-                ],
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                width: 96,
+                height: 96,
+                decoration: const BoxDecoration(gradient: AppColors.brandGradient, shape: BoxShape.circle),
+                child: const Icon(Icons.shield_rounded, size: 48, color: Colors.white),
               ),
-            ),
+              const SizedBox(height: 24),
+              Text('Secure Vault', style: context.text.headlineSmall),
+              const SizedBox(height: 10),
+              Text(
+                'Keep private documents encrypted with AES-256. Files are only readable after you unlock with your PIN or biometrics.',
+                textAlign: TextAlign.center,
+                style: context.text.bodyMedium?.copyWith(color: context.muted, height: 1.4),
+              ),
+              const SizedBox(height: 28),
+              FilledButton.icon(onPressed: _createPin, icon: const Icon(Icons.pin_outlined), label: const Text('Create PIN')),
+            ]),
           ),
         ),
       );
     }
 
-    // Vault is Unlocked
+    if (!_unlocked) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: PinGate(
+          icon: Icons.shield_rounded,
+          title: 'Unlock vault',
+          message: 'Enter your PIN to view encrypted documents.',
+          showBiometric: _hasBiometrics,
+          onBiometric: _tryBiometric,
+          onSubmit: (pin) async {
+            final ok = await ref.read(securityServiceProvider).verifyPin(pin);
+            if (ok && mounted) setState(() => _unlocked = true);
+            return ok;
+          },
+        ),
+      );
+    }
+
     final vaultDocsAsync = ref.watch(documentsProvider(const DocumentQuery(vault: true)));
 
     return Scaffold(
       appBar: AppBar(
-        title: const Row(
-          children: [
-            Icon(Icons.lock_outline, color: AppColors.brand, size: 20),
-            SizedBox(width: 8),
-            Text('Secure Vault (AES-256)'),
-          ],
-        ),
+        title: const Text('Secure Vault'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.lock),
-            tooltip: 'Lock Vault Now',
-            onPressed: () => setState(() => _unlocked = false),
-          ),
+          IconButton(icon: const Icon(Icons.lock_rounded), tooltip: 'Lock vault', onPressed: () => setState(() => _unlocked = false)),
         ],
       ),
       body: vaultDocsAsync.when(
+        skipLoadingOnReload: true,
         data: (docs) => docs.isEmpty
             ? EmptyState(
                 icon: Icons.shield_outlined,
-                title: 'Vault is empty',
-                message: 'All documents in the vault are encrypted with military-grade AES-256-GCM. Tap below to protect private documents.',
-                action: 'Add Document to Vault',
+                title: 'Your vault is empty',
+                message: 'Documents you add are encrypted with AES-256-GCM and hidden from the library.',
+                action: 'Add a document',
                 onAction: _addDocumentToVault,
               )
-            : ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: docs.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
-                itemBuilder: (ctx, i) {
-                  final d = docs[i];
-                  return Card(
-                    child: ListTile(
-                      leading: SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: StoredImage(d.thumbnailPath),
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: context.colors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                    ),
+                    child: Row(children: [
+                      Icon(Icons.verified_user_rounded, color: context.colors.primary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          '${docs.length} encrypted document${docs.length == 1 ? '' : 's'} · locks when you leave the app',
+                          style: context.text.bodySmall?.copyWith(fontWeight: FontWeight.w600),
                         ),
                       ),
-                      title: Text(d.title, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text('${d.pageCount} pages · ${formatBytes(d.fileSize)} · Encrypted'),
+                    ]),
+                  ),
+                  for (final d in docs)
+                    DocumentListTile(
+                      doc: d,
+                      subtitle: '${d.pageCount} page${d.pageCount == 1 ? '' : 's'} · ${formatBytes(d.fileSize)} · encrypted',
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DocumentDetailScreen(documentId: d.id))),
                       trailing: PopupMenuButton<String>(
                         onSelected: (action) {
                           if (action == 'view') {
@@ -267,22 +240,21 @@ class _SecureVaultScreenState extends ConsumerState<SecureVaultScreen> {
                           }
                         },
                         itemBuilder: (_) => const [
-                          PopupMenuItem(value: 'view', child: Text('View / Preview')),
-                          PopupMenuItem(value: 'remove', child: Text('Remove from Vault')),
+                          PopupMenuItem(value: 'view', child: Text('Open')),
+                          PopupMenuItem(value: 'remove', child: Text('Decrypt & remove from vault')),
                         ],
                       ),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DocumentDetailScreen(documentId: d.id))),
                     ),
-                  );
-                },
+                ],
               ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        loading: () => const LoadingView(),
+        error: (e, _) => ErrorView(e),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'vault-add',
         onPressed: _addDocumentToVault,
         icon: const Icon(Icons.add_moderator_outlined),
-        label: const Text('Add Document'),
+        label: const Text('Add document'),
       ),
     );
   }

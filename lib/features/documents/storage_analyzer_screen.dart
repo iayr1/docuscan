@@ -22,7 +22,7 @@ class StorageAnalyzerScreen extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         children: [
           // Total Storage Banner
-          statsAsync.when(
+          statsAsync.when(skipLoadingOnReload: true,
             data: (stats) => Card(
               color: AppColors.brand.withValues(alpha: 0.1),
               child: Padding(
@@ -57,7 +57,7 @@ class StorageAnalyzerScreen extends ConsumerWidget {
           const SizedBox(height: 10),
 
           // Directory Usage
-          usageAsync.when(
+          usageAsync.when(skipLoadingOnReload: true,
             data: (dirs) => Column(
               children: dirs.entries.map((entry) {
                 return Card(

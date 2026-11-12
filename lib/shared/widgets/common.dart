@@ -24,28 +24,34 @@ typedef ProgressUpdate = void Function(String message, [double? fraction]);
 Future<T?> runWithProgress<T>(BuildContext context, String message, Future<T> Function(ProgressUpdate update) task) async {
   final status = ValueNotifier<(String, double?)>((message, null));
   final navigator = Navigator.of(context, rootNavigator: true);
-  var open = true;
-  showDialog<void>(
+  // Keep a handle on the exact dialog route so it can be removed even if the
+  // task pushes another screen on top of it (a plain `pop()` would close that
+  // screen instead and leave the dialog stuck).
+  final route = DialogRoute<void>(
     context: context,
     barrierDismissible: false,
-    useRootNavigator: true,
     builder: (_) => PopScope(
       canPop: false,
       child: Dialog(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
           child: ValueListenableBuilder<(String, double?)>(
             valueListenable: status,
             builder: (context, v, _) => Column(mainAxisSize: MainAxisSize.min, children: [
-              SizedBox(width: 44, height: 44, child: CircularProgressIndicator(value: v.$2, strokeWidth: 3.5)),
-              const SizedBox(height: 18),
+              SizedBox(width: 48, height: 48, child: CircularProgressIndicator(value: v.$2, strokeWidth: 4, strokeCap: StrokeCap.round)),
+              const SizedBox(height: 20),
               Text(v.$1, textAlign: TextAlign.center, style: context.text.titleSmall),
+              if (v.$2 != null) ...[
+                const SizedBox(height: 6),
+                Text('${(v.$2! * 100).round()}%', style: context.text.labelMedium?.copyWith(color: context.muted)),
+              ],
             ]),
           ),
         ),
       ),
     ),
-  ).then((_) => open = false);
+  );
+  navigator.push(route);
   try {
     final result = await task((m, [f]) => status.value = (m, f));
     return result;
@@ -53,8 +59,9 @@ Future<T?> runWithProgress<T>(BuildContext context, String message, Future<T> Fu
     if (context.mounted) showSnack(context, describeError(e), error: true);
     return null;
   } finally {
-    if (open) navigator.pop();
-    status.dispose();
+    if (route.isActive) navigator.removeRoute(route);
+    // Let the dialog finish tearing down before releasing its notifier.
+    WidgetsBinding.instance.addPostFrameCallback((_) => status.dispose());
   }
 }
 
@@ -248,6 +255,7 @@ class AsyncView<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => value.when(
+        skipLoadingOnReload: true,
         data: builder,
         loading: () => loading ?? const LoadingView(),
         error: (e, _) => ErrorView(e, onRetry: onRetry),
@@ -314,4 +322,57 @@ class PillChip extends StatelessWidget {
           labelStyle: TextStyle(fontWeight: FontWeight.w700, color: selected ? context.colors.onPrimary : context.colors.onSurface),
         ),
       );
+}
+
+/// The DocuScan logo (rounded gradient tile with a scanned page).
+class BrandMark extends StatelessWidget {
+  const BrandMark({super.key, this.size = 44});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(size * 0.225),
+          boxShadow: [BoxShadow(color: AppColors.brand.withValues(alpha: 0.28), blurRadius: size * 0.3, offset: Offset(0, size * 0.1))],
+        ),
+        child: Image.asset('assets/branding/logo.png', width: size, height: size, filterQuality: FilterQuality.medium),
+      );
+}
+
+/// "DocuScan" wordmark that adapts to light/dark themes.
+class BrandWordmark extends StatelessWidget {
+  const BrandWordmark({super.key, this.fontSize = 22});
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) => Text.rich(
+        TextSpan(
+          text: 'Docu',
+          style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w900, letterSpacing: -0.4, color: context.colors.onSurface),
+          children: [TextSpan(text: 'Scan', style: TextStyle(color: context.colors.primary))],
+        ),
+      );
+}
+
+/// Small rounded label, e.g. "ENCRYPTED" or a page counter.
+class TagPill extends StatelessWidget {
+  const TagPill(this.label, {super.key, this.color, this.icon});
+  final String label;
+  final Color? color;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? context.colors.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: c.withValues(alpha: context.isDark ? 0.2 : 0.12), borderRadius: BorderRadius.circular(AppRadius.pill)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (icon != null) ...[Icon(icon, size: 12, color: c), const SizedBox(width: 4)],
+        Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: c)),
+      ]),
+    );
+  }
 }

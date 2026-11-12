@@ -51,7 +51,9 @@ class VaultRepository {
         }
         updates[page.id] = map;
       }
-      await _docs.setVaultState(docId, true, updates);
+      // Keep the cover thumbnail (now encrypted) so the vault list can show it.
+      final cover = pages.isEmpty ? null : updates[pages.first.id]?['thumbnail_path'];
+      await _docs.setVaultState(docId, true, updates, thumbnail: cover);
     } catch (_) {
       for (final w in written) {
         await _files.deleteIfExists(w);

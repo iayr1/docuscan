@@ -77,7 +77,10 @@ class _DocuScanAppState extends ConsumerState<DocuScanApp> {
       themeMode: settings.themeMode,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
-      home: _showSplash ? const _StartupSplash() : const AppShell(),
+      home: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 350),
+        child: _showSplash ? const _StartupSplash() : const AppShell(),
+      ),
     );
   }
 }
@@ -87,33 +90,44 @@ class _StartupSplash extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const Scaffold(
-    backgroundColor: AppColors.brand,
-    body: Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.document_scanner_rounded, size: 76, color: Colors.white),
-          SizedBox(height: 18),
-          Text(
-            'DocuScan',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.3,
+        body: DecoratedBox(
+          decoration: BoxDecoration(gradient: AppColors.brandGradient),
+          child: SizedBox.expand(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _SplashIcon(),
+                SizedBox(height: 20),
+                Text(
+                  'DocuScan',
+                  style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                ),
+                SizedBox(height: 6),
+                Text('Private. Offline. Yours.', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500)),
+              ],
             ),
           ),
-          SizedBox(height: 28),
-          SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white70,
-            ),
+        ),
+      );
+}
+
+class _SplashIcon extends StatelessWidget {
+  const _SplashIcon();
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.8, end: 1),
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeOutBack,
+        builder: (_, v, child) => Transform.scale(scale: v, child: child),
+        child: Container(
+          width: 112,
+          height: 112,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: const [BoxShadow(color: Color(0x40000000), blurRadius: 28, offset: Offset(0, 12))],
           ),
-        ],
-      ),
-    ),
-  );
+          child: Image.asset('assets/branding/logo.png'),
+        ),
+      );
 }

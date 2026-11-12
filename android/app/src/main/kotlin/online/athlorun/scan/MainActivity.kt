@@ -1,4 +1,4 @@
-package com.docuscan.docu_scan
+package online.athlorun.scan
 
 import android.net.Uri
 import io.flutter.embedding.android.FlutterFragmentActivity

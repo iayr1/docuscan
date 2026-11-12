@@ -12,10 +12,10 @@ import '../../shared/widgets/common.dart';
 import '../../shared/widgets/document_widgets.dart';
 import '../document_editor/document_detail_screen.dart';
 import '../documents/documents_screen.dart';
-import '../ocr/ocr_screen.dart';
 import '../scanner/id_card_scan_screen.dart';
 import '../scanner/scanner_screen.dart';
 import '../secure_vault/secure_vault_screen.dart';
+import '../shell/app_shell.dart';
 import '../signatures/signatures_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -26,494 +26,377 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  static String _baseName(String path) =>
+      path.split(RegExp(r'[\\/]')).last.replaceAll(RegExp(r'\.[^.]+$'), '');
+
+  void _openDocument(String id) =>
+      Navigator.push(context, MaterialPageRoute(builder: (_) => DocumentDetailScreen(documentId: id)));
+
+  Future<void> _openScanner() async {
+    final doc = await Navigator.push<Document>(context, MaterialPageRoute(builder: (_) => const ScannerScreen()));
+    if (doc != null && mounted) _openDocument(doc.id);
+  }
+
+  Future<void> _openIdCard() async {
+    final doc = await Navigator.push<Document>(context, MaterialPageRoute(builder: (_) => const IdCardScanScreen()));
+    if (doc != null && mounted) _openDocument(doc.id);
+  }
+
   Future<void> _importFromGallery() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickMultiImage();
-    if (picked.isEmpty) return;
+    final picked = await ImagePicker().pickMultiImage();
+    if (picked.isEmpty || !mounted) return;
 
-    final controller = TextEditingController(text: 'Imported Scan ${DateTime.now().day}/${DateTime.now().month}');
-    final title = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Name Document'),
-        content: TextField(controller: controller, autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('Save')),
-        ],
-      ),
+    final now = DateTime.now();
+    final title = await promptText(
+      context,
+      'Name document',
+      initial: 'Imported ${formatDate(now)}',
+      label: 'Document name',
+      confirmLabel: 'Import',
     );
+    if (title == null || title.trim().isEmpty || !mounted) return;
 
-    if (title != null && title.trim().isNotEmpty && mounted) {
-      await runWithProgress(context, 'Importing photos...', (p) async {
-        final drafts = picked.map((x) => PageDraft(x.path)).toList();
-        final doc = await ref.read(documentRepositoryProvider).createDocument(
-              title: title.trim(),
-              pages: drafts,
-            );
-        if (mounted) {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => DocumentDetailScreen(documentId: doc.id)));
-        }
-      });
-    }
+    final doc = await runWithProgress(context, 'Importing ${picked.length} photo${picked.length == 1 ? '' : 's'}…', (p) {
+      return ref.read(documentRepositoryProvider).createDocument(
+            title: title.trim(),
+            pages: picked.map((x) => PageDraft(x.path)).toList(),
+            onProgress: (done, total) => p('Processing page $done of $total…', done / total),
+          );
+    });
+    if (doc != null && mounted) _openDocument(doc.id);
   }
 
   Future<void> _importFiles() async {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'docx', 'xlsx', 'pptx', 'txt', 'png', 'jpg'],
+      allowedExtensions: ['pdf', 'docx', 'xlsx', 'pptx', 'txt', 'png', 'jpg', 'jpeg', 'webp'],
     );
-    if (result.isEmpty || result.first.path == null) return;
+    if (result.isEmpty || result.first.path == null || !mounted) return;
     final path = result.first.path!;
     final ext = path.split('.').last.toLowerCase();
+    final name = _baseName(path);
 
-    if (!mounted) return;
-    await runWithProgress(context, 'Importing $ext document...', (p) async {
-      Document doc;
-      if (ext == 'pdf') {
-        doc = await ref.read(conversionRepositoryProvider).importPdf(path);
-      } else if (ext == 'docx' || ext == 'xlsx' || ext == 'pptx') {
-        final pdf = await ref.read(conversionRepositoryProvider).officeToPdf(path);
-        doc = await ref.read(conversionRepositoryProvider).importPdf(pdf.path, title: path.split(RegExp(r'[\\/]')).last.replaceAll(RegExp(r'\.[^.]+$'), ''));
-      } else if (ext == 'txt') {
-        final pdf = await ref.read(conversionRepositoryProvider).txtToPdf(path);
-        doc = await ref.read(conversionRepositoryProvider).importPdf(pdf.path, title: path.split(RegExp(r'[\\/]')).last.replaceAll(RegExp(r'\.[^.]+$'), ''));
-      } else {
-        doc = await ref.read(documentRepositoryProvider).createDocument(
-              title: path.split(RegExp(r'[\\/]')).last.replaceAll(RegExp(r'\.[^.]+$'), ''),
-              pages: [PageDraft(path)],
-            );
+    final doc = await runWithProgress(context, 'Importing ${ext.toUpperCase()}…', (p) async {
+      final conv = ref.read(conversionRepositoryProvider);
+      if (ext == 'pdf') return conv.importPdf(path);
+      if (ext == 'docx' || ext == 'xlsx' || ext == 'pptx') {
+        final pdf = await conv.officeToPdf(path);
+        return conv.importPdf(pdf.path, title: name);
       }
-
-      if (mounted) {
-        showSnack(context, 'Imported: "${doc.title}"');
-        Navigator.push(context, MaterialPageRoute(builder: (_) => DocumentDetailScreen(documentId: doc.id)));
+      if (ext == 'txt') {
+        final pdf = await conv.txtToPdf(path);
+        return conv.importPdf(pdf.path, title: name);
       }
+      return ref.read(documentRepositoryProvider).createDocument(title: name, pages: [PageDraft(path)]);
     });
+
+    if (doc != null && mounted) {
+      showSnack(context, 'Imported “${doc.title}”');
+      _openDocument(doc.id);
+    }
   }
 
   Future<void> _createFolder() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Create Folder'),
-        content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(labelText: 'Folder Name')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('Create')),
-        ],
-      ),
-    );
-
-    if (name != null && name.trim().isNotEmpty) {
+    final name = await promptText(context, 'New folder', label: 'Folder name', confirmLabel: 'Create');
+    if (name == null || name.trim().isEmpty) return;
+    try {
       await ref.read(folderRepositoryProvider).create(name.trim());
+    } catch (e) {
+      if (mounted) showSnack(context, '$e', error: true);
     }
   }
+
+  void _push(Widget screen) => Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
 
   @override
   Widget build(BuildContext context) {
     final statsAsync = ref.watch(statsProvider);
     final recentDocsAsync = ref.watch(recentDocumentsProvider);
-    final foldersAsync = ref.watch(allFoldersProvider);
+    final foldersAsync = ref.watch(foldersProvider(null));
 
     return Scaffold(
       body: SafeArea(
+        bottom: false,
         child: CustomScrollView(
           slivers: [
-            // Top Header App Bar
+            // Header
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
+              padding: const EdgeInsets.fromLTRB(8, 8, 12, 4),
               sliver: SliverToBoxAdapter(
                 child: Row(
                   children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: AppColors.brand,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.brand.withValues(alpha: 0.25),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(Icons.document_scanner_outlined, color: Colors.white, size: 24),
-                    ),
-                    const SizedBox(width: 12),
-                    RichText(
-                      text: TextSpan(
-                        text: 'docu',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: context.isDark ? Colors.white : AppColors.ink,
-                          letterSpacing: -0.5,
-                        ),
-                        children: const [
-                          TextSpan(
-                            text: 'scan',
-                            style: TextStyle(color: AppColors.brand, fontWeight: FontWeight.w900),
-                          ),
-                        ],
-                      ),
-                    ),
+                    const DrawerMenuButton(),
+                    const SizedBox(width: 2),
+                    const BrandMark(size: 34),
+                    const SizedBox(width: 10),
+                    const BrandWordmark(),
                     const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.search_rounded),
+                      tooltip: 'Search documents',
+                      onPressed: () => ref.read(shellTabProvider.notifier).go(1),
+                    ),
                     IconButton(
                       icon: const Icon(Icons.shield_outlined),
                       tooltip: 'Secure Vault',
-                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SecureVaultScreen())),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.search),
-                      tooltip: 'Search Documents',
-                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DocumentsScreen())),
+                      onPressed: () => _push(const SecureVaultScreen()),
                     ),
                   ],
                 ),
               ),
             ),
 
-            // Hero Storage & Scan Counter Banner
+            // Hero
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
               sliver: SliverToBoxAdapter(
-                child: statsAsync.when(
-                  data: (stats) => Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: context.isDark
-                            ? [const Color(0xFF162520), const Color(0xFF0F1A16)]
-                            : [const Color(0xFFEAF3EE), const Color(0xFFDFEDE5)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(AppRadius.xl),
-                      border: Border.all(color: context.outline),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: AppColors.brand.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(AppRadius.sm),
-                              ),
-                              child: const Text(
-                                '100% PRIVATE & OFFLINE',
-                                style: TextStyle(fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: AppColors.brand),
-                              ),
+                child: _HeroCard(
+                  stats: statsAsync.value,
+                  onScan: _openScanner,
+                ),
+              ),
+            ),
+
+            // Quick actions
+            const SliverToBoxAdapter(child: SectionHeader('Quick actions', padding: EdgeInsets.fromLTRB(20, 22, 12, 10))),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              sliver: SliverGrid.count(
+                crossAxisCount: 3,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 1.0,
+                children: [
+                  _QuickAction(icon: Icons.photo_library_outlined, title: 'Photos', color: AppColors.tints[2], onTap: _importFromGallery),
+                  _QuickAction(icon: Icons.upload_file_outlined, title: 'Files', color: AppColors.tints[1], onTap: _importFiles),
+                  _QuickAction(icon: Icons.badge_outlined, title: 'ID card', color: AppColors.tints[5], onTap: _openIdCard),
+                  _QuickAction(
+                    icon: Icons.text_snippet_outlined,
+                    title: 'Extract text',
+                    color: AppColors.tints[3],
+                    onTap: () => ref.read(shellTabProvider.notifier).go(3),
+                  ),
+                  _QuickAction(icon: Icons.draw_outlined, title: 'Sign', color: AppColors.tints[4], onTap: () => _push(const SignaturesScreen())),
+                  _QuickAction(
+                    icon: Icons.handyman_outlined,
+                    title: 'PDF tools',
+                    color: AppColors.tints[0],
+                    onTap: () => ref.read(shellTabProvider.notifier).go(2),
+                  ),
+                ],
+              ),
+            ),
+
+            // Folders
+            SliverToBoxAdapter(
+              child: SectionHeader('Folders', action: 'New folder', onAction: _createFolder, padding: const EdgeInsets.fromLTRB(20, 20, 8, 4)),
+            ),
+            SliverToBoxAdapter(
+              child: foldersAsync.when(
+                skipLoadingOnReload: true,
+                data: (folders) => folders.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: TapCard(
+                          onTap: _createFolder,
+                          child: Row(children: [
+                            IconBadge(Icons.create_new_folder_outlined, color: context.muted, size: 36),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text('Group related scans into folders', style: context.text.bodyMedium?.copyWith(color: context.muted)),
                             ),
-                            const Spacer(),
-                            const Icon(Icons.offline_bolt_outlined, size: 16, color: AppColors.brand),
-                            const SizedBox(width: 4),
-                            Text('On Device', style: TextStyle(color: AppColors.brand, fontSize: 11, fontWeight: FontWeight.bold)),
-                          ],
+                            Icon(Icons.add_rounded, color: context.colors.primary),
+                          ]),
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Everything in its right place.',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            height: 1.15,
-                            color: context.isDark ? Colors.white : AppColors.ink,
+                      )
+                    : SizedBox(
+                        height: 84,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                          itemCount: folders.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 10),
+                          itemBuilder: (ctx, i) => SizedBox(
+                            width: 170,
+                            child: FolderTile(
+                              folder: folders[i],
+                              compact: true,
+                              onTap: () => _push(DocumentsScreen(initialFolderId: folders[i].id)),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            _statChip(Icons.description_outlined, '${stats.documents}', 'Documents'),
-                            const SizedBox(width: 12),
-                            _statChip(Icons.auto_stories_outlined, '${stats.pages}', 'Pages'),
-                            const SizedBox(width: 12),
-                            _statChip(Icons.sd_storage_outlined, formatBytes(stats.bytes), 'Used'),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  loading: () => const SizedBox(height: 130),
-                  error: (_, _) => const SizedBox.shrink(),
-                ),
+                      ),
+                loading: () => const SizedBox(height: 84),
+                error: (_, _) => const SizedBox.shrink(),
               ),
             ),
 
-            // Quick Actions Section
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              sliver: SliverToBoxAdapter(
-                child: Text('Quick Actions', style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            // Recent documents
+            SliverToBoxAdapter(
+              child: SectionHeader(
+                'Recent documents',
+                action: 'View all',
+                onAction: () => ref.read(shellTabProvider.notifier).go(1),
+                padding: const EdgeInsets.fromLTRB(20, 20, 8, 4),
               ),
             ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: SliverToBoxAdapter(
-                child: Row(
-                  children: [
-                    _quickActionTile(
-                      icon: Icons.camera_alt_outlined,
-                      title: 'Camera Scan',
-                      subtitle: 'Auto page detect',
-                      color: const Color(0xFF1E7054),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ScannerScreen())),
-                    ),
-                    const SizedBox(width: 10),
-                    _quickActionTile(
-                      icon: Icons.photo_library_outlined,
-                      title: 'Import Images',
-                      subtitle: 'From gallery',
-                      color: const Color(0xFFB4532A),
-                      onTap: _importFromGallery,
-                    ),
-                    const SizedBox(width: 10),
-                    _quickActionTile(
-                      icon: Icons.file_open_outlined,
-                      title: 'Import Files',
-                      subtitle: 'PDF, Word, Excel',
-                      color: const Color(0xFF3466C9),
-                      onTap: _importFiles,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Secondary Quick Actions
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-              sliver: SliverToBoxAdapter(
-                child: Row(
-                  children: [
-                    _quickActionTile(
-                      icon: Icons.text_snippet_outlined,
-                      title: 'On-Device OCR',
-                      subtitle: 'Extract text',
-                      color: const Color(0xFF7A4BC2),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OcrScreen())),
-                    ),
-                    const SizedBox(width: 10),
-                    _quickActionTile(
-                      icon: Icons.badge_outlined,
-                      title: 'ID Card Mode',
-                      subtitle: 'Front & back on 1p',
-                      color: const Color(0xFF2F8F9D),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IdCardScanScreen())),
-                    ),
-                    const SizedBox(width: 10),
-                    _quickActionTile(
-                      icon: Icons.draw_outlined,
-                      title: 'Sign & Stamp',
-                      subtitle: 'Digital signature',
-                      color: const Color(0xFFC03A6B),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SignaturesScreen())),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Folders Section
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
-              sliver: SliverToBoxAdapter(
-                child: Row(
-                  children: [
-                    Text('Folders', style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                    const Spacer(),
-                    TextButton.icon(
-                      icon: const Icon(Icons.add, size: 16),
-                      label: const Text('New Folder'),
-                      onPressed: _createFolder,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: SliverToBoxAdapter(
-                child: foldersAsync.when(
-                  data: (folders) => SizedBox(
-                    height: 52,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: folders.length + 1,
-                      separatorBuilder: (_, _) => const SizedBox(width: 10),
-                      itemBuilder: (ctx, i) {
-                        if (i == 0) {
-                          return ActionChip(
-                            avatar: const Icon(Icons.folder_open, size: 18, color: AppColors.brand),
-                            label: const Text('All Documents'),
-                            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DocumentsScreen())),
-                          );
-                        }
-                        final f = folders[i - 1];
-                        return ActionChip(
-                          avatar: const Icon(Icons.folder, size: 18, color: AppColors.brand),
-                          label: Text('${f.name} (${f.documentCount})'),
-                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DocumentsScreen(initialFolderId: f.id))),
-                        );
-                      },
-                    ),
-                  ),
-                  loading: () => const SizedBox(height: 50),
-                  error: (_, _) => const SizedBox.shrink(),
-                ),
-              ),
-            ),
-
-            // Recent Documents Section
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 10),
-              sliver: SliverToBoxAdapter(
-                child: Row(
-                  children: [
-                    Text('Recent Documents', style: context.text.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                    const Spacer(),
-                    TextButton(
-                      child: const Text('View All'),
-                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DocumentsScreen())),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Documents List Items
             recentDocsAsync.when(
+              skipLoadingOnReload: true,
               data: (docs) => docs.isEmpty
-                  ? SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      sliver: SliverToBoxAdapter(
-                        child: EmptyState(
-                          icon: Icons.document_scanner_outlined,
-                          title: 'Your scans live here',
-                          message: 'Capture a page or import photos. All documents remain securely on this phone.',
-                          action: 'Scan First Document',
-                          onAction: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ScannerScreen())),
-                        ),
+                  ? SliverToBoxAdapter(
+                      child: EmptyState(
+                        icon: Icons.document_scanner_outlined,
+                        title: 'Your scans live here',
+                        message: 'Capture a page or import photos. Everything stays on this device.',
+                        action: 'Scan your first document',
+                        onAction: _openScanner,
                       ),
                     )
                   : SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      sliver: SliverList.separated(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                      sliver: SliverList.builder(
                         itemCount: docs.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
                         itemBuilder: (ctx, i) {
                           final doc = docs[i];
-                          return Card(
-                            child: ListTile(
-                              leading: SizedBox(
-                                width: 48,
-                                height: 48,
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: StoredImage(doc.thumbnailPath),
-                                ),
+                          return DocumentListTile(
+                            doc: doc,
+                            onTap: () => _openDocument(doc.id),
+                            trailing: IconButton(
+                              icon: Icon(
+                                doc.isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
+                                color: doc.isFavorite ? const Color(0xFFFFC107) : context.muted,
                               ),
-                              title: Text(doc.title, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-                              subtitle: Text('${doc.pageCount} pages · ${formatBytes(doc.fileSize)} · ${formatDate(doc.updatedAt)}'),
-                              trailing: IconButton(
-                                icon: Icon(doc.isFavorite ? Icons.star : Icons.star_border, color: doc.isFavorite ? Colors.amber : null),
-                                onPressed: () => ref.read(documentRepositoryProvider).setFavorite(doc.id, !doc.isFavorite),
-                              ),
-                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DocumentDetailScreen(documentId: doc.id))),
+                              tooltip: doc.isFavorite ? 'Remove from favorites' : 'Add to favorites',
+                              onPressed: () => ref.read(documentRepositoryProvider).setFavorite(doc.id, !doc.isFavorite),
                             ),
                           );
                         },
                       ),
                     ),
-              loading: () => const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator())),
-              error: (e, _) => SliverToBoxAdapter(child: Center(child: Text('Error: $e'))),
+              loading: () => const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(32), child: LoadingView())),
+              error: (e, _) => SliverToBoxAdapter(child: ErrorView(e)),
             ),
 
-            // Extra space at bottom
-            const SliverToBoxAdapter(child: SizedBox(height: 100)),
+            const SliverToBoxAdapter(child: SizedBox(height: 110)),
           ],
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ScannerScreen())),
-        icon: const Icon(Icons.document_scanner_outlined),
-        label: const Text('Scan Document', style: TextStyle(fontWeight: FontWeight.bold)),
+        heroTag: 'home-scan',
+        onPressed: _openScanner,
+        icon: const Icon(Icons.document_scanner_rounded),
+        label: const Text('Scan', style: TextStyle(fontWeight: FontWeight.w800)),
       ),
     );
   }
+}
 
-  Widget _statChip(IconData icon, String value, String label) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: context.colors.surface.withValues(alpha: 0.8),
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: context.outline),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+class _HeroCard extends StatelessWidget {
+  const _HeroCard({required this.stats, required this.onScan});
+  final LibraryStats? stats;
+  final VoidCallback onScan;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = stats;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: AppColors.brandGradient,
+        borderRadius: BorderRadius.circular(AppRadius.xl + 2),
+        boxShadow: [BoxShadow(color: AppColors.brand.withValues(alpha: 0.28), blurRadius: 24, offset: const Offset(0, 10))],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Positioned(
+            right: -30,
+            top: -30,
+            child: Container(width: 140, height: 140, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.07))),
+          ),
+          Positioned(
+            right: 40,
+            bottom: -50,
+            child: Container(width: 110, height: 110, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.05))),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon, size: 14, color: AppColors.brand),
-                const SizedBox(width: 4),
-                Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(AppRadius.pill)),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.offline_bolt_rounded, size: 13, color: Colors.white),
+                      SizedBox(width: 4),
+                      Text('100% OFFLINE', style: TextStyle(color: Colors.white, fontSize: 10, letterSpacing: 1.1, fontWeight: FontWeight.w800)),
+                    ]),
+                  ),
+                ]),
+                const SizedBox(height: 14),
+                const Text(
+                  'Scan, organise and sign —\nall on your phone.',
+                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800, height: 1.25, letterSpacing: -0.3),
+                ),
+                const SizedBox(height: 16),
+                Row(children: [
+                  _HeroStat(value: s == null ? '–' : '${s.documents}', label: 'Documents'),
+                  _HeroStat(value: s == null ? '–' : '${s.pages}', label: 'Pages'),
+                  _HeroStat(value: s == null ? '–' : formatBytes(s.bytes), label: 'Storage'),
+                ]),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: AppColors.brand),
+                    onPressed: onScan,
+                    icon: const Icon(Icons.document_scanner_rounded),
+                    label: const Text('Start a new scan'),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 2),
-            Text(label, style: TextStyle(fontSize: 10, color: context.muted)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroStat extends StatelessWidget {
+  const _HeroStat({required this.value, required this.label});
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 2),
+          Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 11, fontWeight: FontWeight.w600)),
+        ]),
+      );
+}
+
+class _QuickAction extends StatelessWidget {
+  const _QuickAction({required this.icon, required this.title, required this.color, required this.onTap});
+  final IconData icon;
+  final String title;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => TapCard(
+        onTap: onTap,
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconBadge(icon, color: color, size: 44),
+            const SizedBox(height: 10),
+            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: context.text.labelMedium?.copyWith(fontWeight: FontWeight.w700)),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _quickActionTile({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        child: Container(
-          height: 105,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: context.colors.surface,
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-            border: Border.all(color: context.outline),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, size: 20, color: color),
-              ),
-              const Spacer(),
-              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 2),
-              Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 9, color: context.muted)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+      );
 }

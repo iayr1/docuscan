@@ -221,7 +221,7 @@ class _SignaturesScreenState extends ConsumerState<SignaturesScreen> with Single
         controller: _tabController,
         children: [
           // Signatures tab
-          sigsAsync.when(
+          sigsAsync.when(skipLoadingOnReload: true,
             data: (sigs) => sigs.isEmpty
                 ? EmptyState(
                     icon: Icons.draw_outlined,
@@ -300,7 +300,7 @@ class _SignaturesScreenState extends ConsumerState<SignaturesScreen> with Single
           ),
 
           // Stamps tab
-          stampsAsync.when(
+          stampsAsync.when(skipLoadingOnReload: true,
             data: (stamps) => stamps.isEmpty
                 ? EmptyState(
                     icon: Icons.verified_outlined,

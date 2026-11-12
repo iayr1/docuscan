@@ -14,6 +14,13 @@ abstract final class AppColors {
   static const warning = Color(0xFFD08A1E);
   static const info = Color(0xFF3466C9);
 
+  /// Signature gradient for hero surfaces and the app mark.
+  static const brandGradient = LinearGradient(
+    colors: [Color(0xFF2A8C69), Color(0xFF15573F)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
   /// Accent tints used for quick-action tiles and tool icons.
   static const tints = <Color>[
     Color(0xFF1E7054),
@@ -150,11 +157,21 @@ abstract final class AppTheme {
         showCheckmark: false,
       ),
       navigationBarTheme: NavigationBarThemeData(
-        height: 68,
+        height: 70,
+        elevation: 0,
         backgroundColor: scheme.surface,
         surfaceTintColor: Colors.transparent,
         indicatorColor: scheme.primary.withValues(alpha: 0.14),
-        labelTextStyle: WidgetStatePropertyAll(text.labelSmall?.copyWith(fontWeight: FontWeight.w700)),
+        indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.pill)),
+        iconTheme: WidgetStateProperty.resolveWith(
+          (s) => IconThemeData(color: s.contains(WidgetState.selected) ? scheme.primary : scheme.onSurface.withValues(alpha: 0.6)),
+        ),
+        labelTextStyle: WidgetStateProperty.resolveWith(
+          (s) => text.labelSmall?.copyWith(
+            fontWeight: s.contains(WidgetState.selected) ? FontWeight.w800 : FontWeight.w600,
+            color: s.contains(WidgetState.selected) ? scheme.primary : scheme.onSurface.withValues(alpha: 0.6),
+          ),
+        ),
       ),
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor: scheme.surface,
@@ -178,7 +195,19 @@ abstract final class AppTheme {
       listTileTheme: ListTileThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
       ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: scheme.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 6,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? scheme.onPrimary : null),
+        trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+      ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
+        elevation: 3,
+        highlightElevation: 6,
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.lg + 2)),

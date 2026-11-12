@@ -59,13 +59,17 @@ void main() {
       );
 
       await tester.pump();
+      // Wait past the startup splash and its cross-fade.
+      await Future<void>.delayed(const Duration(milliseconds: 1300));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
       await Future<void>.delayed(const Duration(milliseconds: 150));
       await tester.pump();
 
       // Verify app navigation destinations
       expect(find.text('Home'), findsWidgets);
       expect(find.text('Documents'), findsWidgets);
-      expect(find.text('PDF Tools'), findsWidgets);
+      expect(find.text('Tools'), findsWidgets);
       expect(find.text('OCR'), findsWidgets);
     });
   });

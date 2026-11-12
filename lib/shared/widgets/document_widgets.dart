@@ -13,9 +13,10 @@ import 'common.dart';
 /// Shows an image stored under the app root. Vault files (`*.enc`) are
 /// decrypted in memory; plain files are decoded at display size only.
 class StoredImage extends ConsumerWidget {
-  const StoredImage(this.relativePath, {super.key, this.fit = BoxFit.cover, this.cacheWidth, this.placeholderIcon = Icons.description_outlined});
+  const StoredImage(this.relativePath, {super.key, this.fit = BoxFit.cover, this.alignment = Alignment.center, this.cacheWidth, this.placeholderIcon = Icons.description_outlined});
   final String? relativePath;
   final BoxFit fit;
+  final Alignment alignment;
   final int? cacheWidth;
   final IconData placeholderIcon;
 
@@ -28,12 +29,13 @@ class StoredImage extends ConsumerWidget {
     );
     if (path == null) return placeholder;
     if (path.endsWith('.enc')) {
-      return _VaultImage(path, fit: fit, placeholder: placeholder);
+      return _VaultImage(path, fit: fit, alignment: alignment, placeholder: placeholder);
     }
     final file = ref.watch(fileStoreProvider).file(path);
     return Image.file(
       file,
       fit: fit,
+      alignment: alignment,
       cacheWidth: cacheWidth,
       gaplessPlayback: true,
       errorBuilder: (_, _, _) => placeholder,
@@ -42,9 +44,10 @@ class StoredImage extends ConsumerWidget {
 }
 
 class _VaultImage extends ConsumerStatefulWidget {
-  const _VaultImage(this.path, {required this.fit, required this.placeholder});
+  const _VaultImage(this.path, {required this.fit, required this.placeholder, this.alignment = Alignment.center});
   final String path;
   final BoxFit fit;
+  final Alignment alignment;
   final Widget placeholder;
   @override
   ConsumerState<_VaultImage> createState() => _VaultImageState();
@@ -60,9 +63,15 @@ class _VaultImageState extends ConsumerState<_VaultImage> {
   }
 
   @override
+  void didUpdateWidget(covariant _VaultImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path) _future = ref.read(vaultRepositoryProvider).readDecrypted(widget.path);
+  }
+
+  @override
   Widget build(BuildContext context) => FutureBuilder<Uint8List>(
         future: _future,
-        builder: (context, snap) => snap.hasData ? Image.memory(snap.data!, fit: widget.fit, gaplessPlayback: true) : widget.placeholder,
+        builder: (context, snap) => snap.hasData ? Image.memory(snap.data!, fit: widget.fit, alignment: widget.alignment, gaplessPlayback: true) : widget.placeholder,
       );
 }
 
@@ -73,7 +82,7 @@ class DocThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hidden = doc.isLocked || (doc.inVault);
+    final hidden = doc.isLocked;
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: Stack(fit: StackFit.expand, children: [
@@ -82,8 +91,14 @@ class DocThumbnail extends StatelessWidget {
             color: context.colors.primary.withValues(alpha: 0.1),
             child: Icon(Icons.lock_rounded, color: context.colors.primary),
           )
-        else
-          StoredImage(doc.thumbnailPath, cacheWidth: 360),
+        else ...[
+          // Paper-coloured backdrop so whole pages (portrait or landscape) fit without cropping.
+          ColoredBox(color: context.colors.surfaceContainerHighest.withValues(alpha: context.isDark ? 0.25 : 0.45)),
+          Padding(
+            padding: const EdgeInsets.all(3),
+            child: StoredImage(doc.thumbnailPath, fit: BoxFit.contain, alignment: Alignment.topCenter, cacheWidth: 360),
+          ),
+        ],
         if (doc.pageCount > 1)
           Positioned(
             right: 6,

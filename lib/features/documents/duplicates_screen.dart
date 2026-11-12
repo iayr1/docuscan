@@ -17,7 +17,7 @@ class DuplicatesScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Duplicate Documents'),
       ),
-      body: dupesAsync.when(
+      body: dupesAsync.when(skipLoadingOnReload: true,
         data: (groups) => groups.isEmpty
             ? const EmptyState(
                 icon: Icons.copy_outlined,

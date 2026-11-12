@@ -18,87 +18,72 @@ class TrashScreen extends ConsumerStatefulWidget {
 class _TrashScreenState extends ConsumerState<TrashScreen> {
   Future<void> _restore(Document doc) async {
     await ref.read(documentRepositoryProvider).restoreDocuments([doc.id]);
-    if (mounted) showSnack(context, 'Restored "${doc.title}"');
+    if (mounted) showSnack(context, 'Restored “${doc.title}”');
   }
 
   Future<void> _deletePermanently(Document doc) async {
-    if (await confirm(context, 'Delete Permanently', 'Permanently delete "${doc.title}"? This cannot be undone.', destructive: true)) {
+    if (await confirm(context, 'Delete forever', 'Permanently delete “${doc.title}”? This cannot be undone.', confirmLabel: 'Delete', destructive: true)) {
       await ref.read(documentRepositoryProvider).deletePermanently([doc.id]);
-      if (mounted) showSnack(context, 'Permanently deleted');
+      if (mounted) showSnack(context, 'Deleted permanently');
     }
   }
 
-  Future<void> _emptyTrash() async {
-    if (await confirm(context, 'Empty Trash', 'Permanently remove all items from trash? This cannot be undone.', destructive: true)) {
-      await runWithProgress(context, 'Emptying trash...', (p) async {
-        await ref.read(documentRepositoryProvider).emptyTrash();
-      });
-      if (mounted) showSnack(context, 'Trash emptied');
+  Future<void> _emptyTrash(int count) async {
+    if (count == 0) return;
+    if (!await confirm(context, 'Empty recycle bin', 'Permanently delete $count item${count == 1 ? '' : 's'}? This cannot be undone.',
+        confirmLabel: 'Empty', destructive: true)) {
+      return;
     }
+    if (!mounted) return;
+    final ok = await runWithProgress(context, 'Emptying recycle bin…', (p) async {
+      await ref.read(documentRepositoryProvider).emptyTrash();
+      return true;
+    });
+    if (ok == true && mounted) showSnack(context, 'Recycle bin emptied');
   }
 
   @override
   Widget build(BuildContext context) {
-    // Query trash items (deleted documents)
     final trashAsync = ref.watch(documentsProvider(const DocumentQuery(trashed: true)));
+    final count = trashAsync.value?.length ?? 0;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Recycle Bin'),
+        title: const Text('Recycle bin'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.delete_forever_outlined),
-            tooltip: 'Empty Trash',
-            onPressed: _emptyTrash,
-          ),
+          if (count > 0)
+            TextButton.icon(
+              style: TextButton.styleFrom(foregroundColor: context.colors.error),
+              icon: const Icon(Icons.delete_sweep_outlined),
+              label: const Text('Empty'),
+              onPressed: () => _emptyTrash(count),
+            ),
         ],
       ),
-      body: trashAsync.when(
-        data: (docs) => docs.isEmpty
+      body: AsyncView(
+        trashAsync,
+        builder: (docs) => docs.isEmpty
             ? const EmptyState(
-                icon: Icons.delete_outline,
-                title: 'Trash is empty',
-                message: 'Deleted documents remain in the recycle bin for 30 days before permanent deletion.',
+                icon: Icons.delete_outline_rounded,
+                title: 'Recycle bin is empty',
+                message: 'Deleted documents stay here for 30 days before they are removed for good.',
               )
-            : ListView.separated(
-                padding: const EdgeInsets.all(16),
+            : ListView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 itemCount: docs.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
                 itemBuilder: (ctx, i) {
                   final d = docs[i];
-                  return Card(
-                    child: ListTile(
-                      leading: SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: StoredImage(d.thumbnailPath),
-                        ),
-                      ),
-                      title: Text(d.title, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text('${d.pageCount} pages · ${formatBytes(d.fileSize)}'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.restore_outlined, color: AppColors.brand),
-                            tooltip: 'Restore',
-                            onPressed: () => _restore(d),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_forever_outlined, color: Colors.red),
-                            tooltip: 'Delete Permanently',
-                            onPressed: () => _deletePermanently(d),
-                          ),
-                        ],
-                      ),
-                    ),
+                  return DocumentListTile(
+                    doc: d,
+                    subtitle: '${d.pageCount} page${d.pageCount == 1 ? '' : 's'} · ${formatBytes(d.fileSize)}'
+                        '${d.deletedAt != null ? ' · deleted ${formatRelative(d.deletedAt!)}' : ''}',
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(icon: Icon(Icons.restore_rounded, color: context.colors.primary), tooltip: 'Restore', onPressed: () => _restore(d)),
+                      IconButton(icon: Icon(Icons.delete_forever_outlined, color: context.colors.error), tooltip: 'Delete forever', onPressed: () => _deletePermanently(d)),
+                    ]),
                   );
                 },
               ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
       ),
     );
   }

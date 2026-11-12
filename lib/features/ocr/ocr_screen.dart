@@ -15,10 +15,14 @@ import '../../core/theme/app_theme.dart';
 import '../../data/models/models.dart';
 import '../../shared/widgets/common.dart';
 import '../pdf_tools/pdf_viewer_screen.dart';
+import '../shell/app_shell.dart';
 
 class OcrScreen extends ConsumerStatefulWidget {
-  const OcrScreen({super.key, this.initialDocumentId});
+  const OcrScreen({super.key, this.initialDocumentId, this.isRootTab = false});
   final String? initialDocumentId;
+
+  /// True when shown as a bottom-navigation tab (shows the drawer button).
+  final bool isRootTab;
 
   @override
   ConsumerState<OcrScreen> createState() => _OcrScreenState();
@@ -27,11 +31,23 @@ class OcrScreen extends ConsumerStatefulWidget {
 class _OcrScreenState extends ConsumerState<OcrScreen> {
   String? _imagePath;
   String? _documentId;
-  OcrLanguage _selectedLanguage = OcrLanguage.latin;
+  late OcrLanguage _selectedLanguage = ref.read(settingsProvider).ocrLanguage;
   bool _busy = false;
   int _requestId = 0;
   OcrOutput? _lastResult;
   late final TextEditingController _textController;
+
+  /// Pages of the document being recognised (empty for a loose image).
+  List<DocPage> _docPages = const [];
+  int _pageIndex = 0;
+
+  static const _languageLabels = {
+    OcrLanguage.latin: ('EN', 'English / Latin'),
+    OcrLanguage.devanagari: ('हि', 'Hindi / Marathi'),
+    OcrLanguage.chinese: ('中', 'Chinese'),
+    OcrLanguage.japanese: ('日', 'Japanese'),
+    OcrLanguage.korean: ('한', 'Korean'),
+  };
 
   @override
   void initState() {
@@ -55,18 +71,25 @@ class _OcrScreenState extends ConsumerState<OcrScreen> {
           .read(documentRepositoryProvider)
           .getPages(_documentId!);
       if (pages.isNotEmpty && mounted) {
-        setState(
-          () => _imagePath = ref
-              .read(fileStoreProvider)
-              .abs(pages.first.imagePath),
-        );
-        await _runOcr();
+        _docPages = pages;
+        await _selectPage(0);
       }
     } catch (e) {
       if (mounted) {
         showSnack(context, 'Could not open this document: $e', error: true);
       }
     }
+  }
+
+  Future<void> _selectPage(int index) async {
+    if (index < 0 || index >= _docPages.length) return;
+    setState(() {
+      _pageIndex = index;
+      _imagePath = ref.read(fileStoreProvider).abs(_docPages[index].imagePath);
+      _textController.clear();
+      _lastResult = null;
+    });
+    await _runOcr();
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -84,6 +107,8 @@ class _OcrScreenState extends ConsumerState<OcrScreen> {
     setState(() {
       _imagePath = picked.path;
       _documentId = null;
+      _docPages = const [];
+      _pageIndex = 0;
       _textController.clear();
       _lastResult = null;
     });
@@ -116,15 +141,13 @@ class _OcrScreenState extends ConsumerState<OcrScreen> {
       if (!mounted || requestId != _requestId) return;
       _lastResult = result;
       _textController.text = result.text;
-      if (_documentId != null) {
-        final pages = await ref
-            .read(documentRepositoryProvider)
-            .getPages(_documentId!);
-        if (pages.isNotEmpty) {
+      if (_documentId != null && _pageIndex < _docPages.length) {
+        final page = _docPages[_pageIndex];
+        {
           await ref
               .read(assetRepositoryProvider)
               .saveOcr(
-                pageId: pages.first.id,
+                pageId: page.id,
                 documentId: _documentId!,
                 script: language.name,
                 text: result.text,
@@ -335,49 +358,44 @@ class _OcrScreenState extends ConsumerState<OcrScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = _languageLabels[_selectedLanguage]!;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('On-Device OCR'),
+        leading: widget.isRootTab ? const DrawerMenuButton() : null,
+        title: const Text('Text recognition'),
         actions: [
-          if (Platform.isAndroid)
+          if (Platform.isAndroid && _lastResult != null)
             IconButton(
               onPressed: _busy ? null : _improveOcrText,
-              tooltip: 'Improve OCR text locally',
-              icon: const Icon(Icons.auto_awesome),
+              tooltip: 'Improve text with on-device AI',
+              icon: const Icon(Icons.auto_awesome_outlined),
             ),
-          DropdownButton<OcrLanguage>(
-            value: _selectedLanguage,
-            underline: const SizedBox(),
-            items: const [
-              DropdownMenuItem(
-                value: OcrLanguage.latin,
-                child: Text('English / Latin'),
-              ),
-              DropdownMenuItem(
-                value: OcrLanguage.devanagari,
-                child: Text('Hindi / Marathi'),
-              ),
-              DropdownMenuItem(
-                value: OcrLanguage.chinese,
-                child: Text('Chinese'),
-              ),
-              DropdownMenuItem(
-                value: OcrLanguage.japanese,
-                child: Text('Japanese'),
-              ),
-              DropdownMenuItem(
-                value: OcrLanguage.korean,
-                child: Text('Korean'),
-              ),
-            ],
-            onChanged: (v) {
-              if (v != null) {
-                setState(() => _selectedLanguage = v);
-                if (_imagePath != null) _runOcr();
-              }
+          PopupMenuButton<OcrLanguage>(
+            tooltip: 'Recognition language',
+            initialValue: _selectedLanguage,
+            onSelected: (v) {
+              setState(() => _selectedLanguage = v);
+              if (_imagePath != null) _runOcr();
             },
+            itemBuilder: (_) => [
+              for (final e in _languageLabels.entries)
+                CheckedPopupMenuItem(value: e.key, checked: e.key == _selectedLanguage, child: Text(e.value.$2)),
+            ],
+            child: Container(
+              margin: const EdgeInsets.only(right: 12, left: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: context.colors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.translate_rounded, size: 16, color: context.colors.primary),
+                const SizedBox(width: 6),
+                Text(lang.$1, style: TextStyle(fontWeight: FontWeight.w800, color: context.colors.primary)),
+                Icon(Icons.arrow_drop_down_rounded, color: context.colors.primary),
+              ]),
+            ),
           ),
-          const SizedBox(width: 8),
         ],
       ),
       body: _imagePath == null ? _buildEmptyPicker() : _buildOcrView(),
@@ -386,51 +404,42 @@ class _OcrScreenState extends ConsumerState<OcrScreen> {
 
   Widget _buildEmptyPicker() {
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: AppColors.brand.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.document_scanner_outlined,
-                size: 40,
-                color: AppColors.brand,
-              ),
+              width: 96,
+              height: 96,
+              decoration: const BoxDecoration(gradient: AppColors.brandGradient, shape: BoxShape.circle),
+              child: const Icon(Icons.text_snippet_rounded, size: 46, color: Colors.white),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
+            Text('Extract text from any page', textAlign: TextAlign.center, style: context.text.headlineSmall),
+            const SizedBox(height: 10),
             Text(
-              'Offline Text Recognition',
-              style: context.text.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Extract editable text from documents, receipts, business cards and certificates with zero internet connection.',
+              'Recognise printed text in documents, receipts and cards — fully offline, in ${_languageLabels.length} scripts.',
               textAlign: TextAlign.center,
-              style: context.text.bodyMedium?.copyWith(color: context.muted),
+              style: context.text.bodyMedium?.copyWith(color: context.muted, height: 1.4),
             ),
             const SizedBox(height: 28),
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                FilledButton.icon(
-                  onPressed: () => _pickImage(ImageSource.camera),
-                  icon: const Icon(Icons.camera_alt_outlined),
-                  label: const Text('Camera'),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => _pickImage(ImageSource.camera),
+                    icon: const Icon(Icons.photo_camera_outlined),
+                    label: const Text('Camera'),
+                  ),
                 ),
                 const SizedBox(width: 12),
-                FilledButton.tonalIcon(
-                  onPressed: () => _pickImage(ImageSource.gallery),
-                  icon: const Icon(Icons.photo_library_outlined),
-                  label: const Text('Gallery'),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _pickImage(ImageSource.gallery),
+                    icon: const Icon(Icons.photo_library_outlined),
+                    label: const Text('Gallery'),
+                  ),
                 ),
               ],
             ),
@@ -441,112 +450,88 @@ class _OcrScreenState extends ConsumerState<OcrScreen> {
   }
 
   Widget _buildOcrView() {
+    final words = _textController.text.split(RegExp(r'\s+')).where((s) => s.isNotEmpty).length;
+    final langName = _languageLabels[_selectedLanguage]!.$2;
     return Column(
       children: [
-        // Top Split: Image thumbnail & status
-        Container(
-          color: context.colors.surfaceContainerLowest,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
           child: Row(
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: Image.file(File(_imagePath!), fit: BoxFit.cover),
-                ),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                child: SizedBox(width: 48, height: 60, child: Image.file(File(_imagePath!), fit: BoxFit.cover, cacheWidth: 160)),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(_busy ? 'Recognising text…' : '$words word${words == 1 ? '' : 's'} found', style: context.text.titleSmall),
+                    const SizedBox(height: 2),
                     Text(
-                      _busy
-                          ? 'Recognizing text...'
-                          : '${_textController.text.split(RegExp(r'\s+')).where((s) => s.isNotEmpty).length} Words extracted',
-                      style: context.text.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      'Model: ${_selectedLanguage.name.toUpperCase()} (Offline ML-Kit)',
-                      style: context.text.bodySmall?.copyWith(
-                        color: context.muted,
-                      ),
+                      _docPages.length > 1 ? 'Page ${_pageIndex + 1} of ${_docPages.length} · $langName' : langName,
+                      style: context.text.bodySmall?.copyWith(color: context.muted),
                     ),
                   ],
                 ),
               ),
               if (_busy)
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.brand,
-                  ),
-                )
+                const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
               else
-                IconButton(
-                  icon: const Icon(Icons.refresh),
-                  tooltip: 'Rerun OCR',
-                  onPressed: _runOcr,
-                ),
+                IconButton(icon: const Icon(Icons.refresh_rounded), tooltip: 'Run again', onPressed: _runOcr),
               IconButton(
-                icon: const Icon(Icons.image_outlined),
+                icon: const Icon(Icons.add_photo_alternate_outlined),
                 tooltip: 'Pick another image',
                 onPressed: () => _pickImage(ImageSource.gallery),
               ),
             ],
           ),
         ),
-
-        // Middle: Editable Extracted Text
+        if (_docPages.length > 1)
+          SizedBox(
+            height: 44,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+              itemCount: _docPages.length,
+              itemBuilder: (ctx, i) => PillChip(
+                label: 'Page ${i + 1}',
+                selected: i == _pageIndex,
+                onTap: _busy ? null : () => _selectPage(i),
+              ),
+            ),
+          ),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: TextField(
               controller: _textController,
               maxLines: null,
               expands: true,
               textAlignVertical: TextAlignVertical.top,
-              decoration: const InputDecoration(
-                hintText: 'Recognized text will appear here...',
-                border: OutlineInputBorder(),
+              style: context.text.bodyLarge?.copyWith(height: 1.45),
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: _busy ? 'Reading the page…' : 'Recognised text appears here. You can edit it.',
               ),
             ),
           ),
         ),
-
-        // Bottom Action Bar
         Container(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          padding: const EdgeInsets.fromLTRB(12, 10, 16, 12),
           decoration: BoxDecoration(
             color: context.colors.surface,
             border: Border(top: BorderSide(color: context.outline)),
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              IconButton(
-                icon: const Icon(Icons.copy_outlined),
-                tooltip: 'Copy Text',
-                onPressed: _copyText,
-              ),
-              IconButton(
-                icon: const Icon(Icons.share_outlined),
-                tooltip: 'Share Text',
-                onPressed: _shareText,
-              ),
-              IconButton(
-                icon: const Icon(Icons.file_download_outlined),
-                tooltip: 'Export to .TXT',
-                onPressed: _exportToTxt,
-              ),
+              IconButton(icon: const Icon(Icons.copy_rounded), tooltip: 'Copy', onPressed: _copyText),
+              IconButton(icon: const Icon(Icons.ios_share_rounded), tooltip: 'Share', onPressed: _shareText),
+              IconButton(icon: const Icon(Icons.save_alt_rounded), tooltip: 'Save as .txt', onPressed: _exportToTxt),
+              const Spacer(),
               FilledButton.icon(
-                onPressed: _createSearchablePdf,
+                onPressed: _busy ? null : _createSearchablePdf,
                 icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
                 label: const Text('Searchable PDF'),
               ),
